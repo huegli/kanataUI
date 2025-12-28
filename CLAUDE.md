@@ -58,6 +58,12 @@ All error conditions are fatal - show alert and quit the application:
 - Xcode Project
 - macOS 26 (Tahoe)
 
+## Comments
+- Add detailed comments to all the files that make up this project.
+- Assume that the reader has some good general understanding of programing but is a beginner in Swift and not familiar with particular MacOS Application specific programming patterns and conventions like protocols, SwiftUI. 
+- Highlight in particular best practices to use for MacOS App Development using Swift
+- IMPORTANT: Keep the comments updated as you make changes to the code!!!
+
 ## Testing Strategy
 
 ### Approach: Hybrid (Unit Tests + Manual Checklist)
