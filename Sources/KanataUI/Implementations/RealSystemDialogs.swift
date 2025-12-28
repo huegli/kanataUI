@@ -96,6 +96,29 @@ final class RealSystemDialogs: SystemDialogs {
     }
 
     // -------------------------------------------------------------------------
+    // showAlert - DISPLAY A NON-FATAL WARNING DIALOG
+    // -------------------------------------------------------------------------
+    // Similar to showFatalAlert but does NOT terminate the application.
+    // Used for recoverable errors where the user can take action and continue.
+    //
+    // Uses .warning style instead of .critical to indicate it's not fatal.
+    // -------------------------------------------------------------------------
+
+    func showAlert(title: String, message: String) {
+        DebugLog.shared.log("Showing alert: \(title) - \(message)", level: .warning)
+
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning  // Yellow warning icon (not red critical)
+        alert.addButton(withTitle: "OK")
+
+        // runModal() blocks until user clicks OK
+        // Unlike showFatalAlert, we don't terminate after this
+        alert.runModal()
+    }
+
+    // -------------------------------------------------------------------------
     // runPrivilegedScript - EXECUTE WITH ADMIN RIGHTS VIA OSASCRIPT
     // -------------------------------------------------------------------------
     // This method:

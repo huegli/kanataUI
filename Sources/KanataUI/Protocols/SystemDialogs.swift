@@ -79,6 +79,28 @@ protocol SystemDialogs {
     func showFatalAlert(title: String, message: String)
 
     // -------------------------------------------------------------------------
+    // showAlert - DISPLAY A NON-FATAL WARNING OR ERROR
+    // -------------------------------------------------------------------------
+    // Unlike showFatalAlert, this does NOT terminate the application.
+    // Use this for recoverable errors where the user can take action and
+    // continue using the app (e.g., failed to stop a process but can retry).
+    //
+    // WHEN TO USE EACH:
+    // - showFatalAlert: App cannot continue (missing files, launch failures)
+    // - showAlert: User should be informed but app continues (stop failed)
+    // -------------------------------------------------------------------------
+
+    /// Shows an informational or warning alert without terminating the app.
+    ///
+    /// - Parameters:
+    ///   - title: The alert's title
+    ///   - message: Detailed message explaining the situation
+    ///
+    /// Unlike showFatalAlert, this method returns after the user dismisses
+    /// the alert, allowing the application to continue running.
+    func showAlert(title: String, message: String)
+
+    // -------------------------------------------------------------------------
     // runPrivilegedScript - EXECUTE WITH ADMIN RIGHTS
     // -------------------------------------------------------------------------
     // macOS requires explicit user consent for privileged operations.

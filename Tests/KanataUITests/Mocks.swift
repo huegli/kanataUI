@@ -90,6 +90,11 @@ final class MockProcessLauncher: ProcessLauncher {
     /// The signal passed to terminate()
     var terminatedSignal: Int32?
 
+    /// What terminate() should return. Defaults to true (success).
+    /// Set to false to simulate termination failure (e.g., user cancelled
+    /// password prompt or permission denied).
+    var terminateResult = true
+
     // -------------------------------------------------------------------------
     // PROTOCOL IMPLEMENTATIONS
     // -------------------------------------------------------------------------
@@ -104,12 +109,27 @@ final class MockProcessLauncher: ProcessLauncher {
         }
     }
 
-    func terminate(pid: Int, signal: Int32) {
+    /// Mock implementation of terminate() that returns configurable result.
+    ///
+    /// UPDATED (v1.0.1): Now returns Bool to match updated protocol.
+    /// The return value indicates whether termination succeeded:
+    /// - true: Process was killed successfully
+    /// - false: Termination failed (permission denied, user cancelled, etc.)
+    ///
+    /// Tests can control this via the `terminateResult` property.
+    func terminate(pid: Int, signal: Int32) -> Bool {
         // Record the call for later verification
         terminateCalled = true
         terminatedPID = pid
         terminatedSignal = signal
-        // Note: We don't actually terminate anything - it's a mock!
+
+        // If termination "succeeds", also update isRunning to false
+        // to simulate the process actually stopping
+        if terminateResult {
+            isRunning = false
+        }
+
+        return terminateResult
     }
 
     func isProcessRunning(pid: Int) -> Bool {
@@ -137,10 +157,14 @@ final class MockSystemDialogs: SystemDialogs {
     /// Whether showFatalAlert() was called
     var fatalAlertShown = false
 
-    /// The title passed to showFatalAlert()
+    /// Whether showAlert() (non-fatal) was called
+    /// ADDED (v1.0.1): Track non-fatal alerts separately from fatal alerts
+    var alertShown = false
+
+    /// The title passed to showFatalAlert() or showAlert()
     var lastAlertTitle: String?
 
-    /// The message passed to showFatalAlert()
+    /// The message passed to showFatalAlert() or showAlert()
     var lastAlertMessage: String?
 
     // -------------------------------------------------------------------------
@@ -166,6 +190,19 @@ final class MockSystemDialogs: SystemDialogs {
         // IMPORTANT: We do NOT call NSApplication.shared.terminate(nil)!
         // The real implementation does, but that would kill our test runner.
         // Tests can check shouldQuitOnFatalAlert if needed.
+    }
+
+    /// Mock implementation of showAlert() (non-fatal alerts).
+    ///
+    /// ADDED (v1.0.1): New method for non-fatal alerts that don't quit the app.
+    /// Used when termination fails and we want to inform the user without
+    /// exiting (e.g., "Failed to stop kanata - you can try again").
+    func showAlert(title: String, message: String) {
+        // Record the call - tests can verify this was called
+        alertShown = true
+        lastAlertTitle = title
+        lastAlertMessage = message
+        // Note: Unlike showFatalAlert, this doesn't terminate anything
     }
 
     func runPrivilegedScript(_ script: String) throws -> String {

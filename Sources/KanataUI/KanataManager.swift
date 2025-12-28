@@ -318,16 +318,25 @@ final class KanataManager {
     }
 
     // -------------------------------------------------------------------------
-    // stopKanata() - GRACEFUL SHUTDOWN
+    // stopKanata() - FORCEFUL PROCESS TERMINATION
     // -------------------------------------------------------------------------
-    // Stops the running kanata process by sending SIGTERM (graceful shutdown).
+    // Stops the running kanata process by sending SIGKILL (forceful shutdown).
     //
     // UNIX SIGNAL BASICS:
-    // - SIGTERM (15): "Please terminate gracefully" - allows cleanup
-    // - SIGKILL (9): "Terminate immediately" - cannot be ignored
+    // - SIGTERM (15): "Please terminate gracefully" - allows cleanup, CAN BE IGNORED
+    // - SIGKILL (9): "Terminate immediately" - CANNOT be caught or ignored
     //
-    // BEST PRACTICE: Always try SIGTERM first. Only use SIGKILL if the
-    // process doesn't respond to SIGTERM.
+    // WHY SIGKILL INSTEAD OF SIGTERM?
+    // Kanata runs as a keyboard remapper with low-level system access. Testing
+    // showed that SIGTERM was being ignored or taking too long to process.
+    // Since kanata doesn't need to perform cleanup (it's stateless - keyboard
+    // mappings are restored by the OS when the process exits), SIGKILL is safe
+    // and provides reliable, immediate termination.
+    //
+    // IMPORTANT: This method checks if termination actually succeeded.
+    // If the user cancels the password prompt or termination fails for any
+    // reason, the UI state remains unchanged (still shows "Running").
+    // This prevents the UI from showing "Stopped" when kanata is still running.
     // -------------------------------------------------------------------------
     func stopKanata() {
         // `guard let` unwraps the optional and exits if nil
@@ -338,19 +347,71 @@ final class KanataManager {
 
         DebugLog.shared.log("Stopping Kanata (PID: \(pid))")
 
+        // Stop monitoring BEFORE attempting termination to prevent
+        // the monitor from detecting the process exit as a "crash"
         stopMonitoring()
-        processLauncher.terminate(pid: pid, signal: SIGTERM)
-        appState.kanataPID = nil
-        appState.isRunning = false
 
-        DebugLog.shared.log("Kanata stopped")
+        // Attempt to terminate the process using SIGKILL for reliable termination
+        // terminate() returns true only if the process was successfully killed
+        let success = processLauncher.terminate(pid: pid, signal: SIGKILL)
+
+        if success {
+            // Process was successfully terminated - update state
+            appState.kanataPID = nil
+            appState.isRunning = false
+            DebugLog.shared.log("Kanata stopped successfully")
+        } else {
+            // Termination failed (user cancelled password prompt or other error)
+            // Keep the state as "running" since the process is still alive
+            DebugLog.shared.log("Failed to stop Kanata - process still running", level: .error)
+
+            // Restart monitoring since the process is still running
+            startMonitoring()
+
+            // Show error to user (non-fatal since app doesn't need to quit)
+            systemDialogs.showAlert(
+                title: "Failed to Stop Kanata",
+                message: "Could not terminate the kanata process (PID \(pid)).\n\nThe process may require administrator privileges to stop. You can try again or manually run:\nsudo kill \(pid)"
+            )
+        }
     }
 
-    /// Called when the app is terminating to ensure cleanup.
+    // -------------------------------------------------------------------------
+    // cleanup() - APP TERMINATION CLEANUP
+    // -------------------------------------------------------------------------
+    // Called when the app is terminating to ensure the kanata process is stopped.
+    //
+    // IMPORTANT: This method runs synchronously during app termination.
+    // It MUST complete before the app exits, otherwise the kanata process
+    // will be orphaned and continue running in the background.
+    //
+    // Unlike stopKanata(), this method does NOT show error dialogs because:
+    // 1. The app is already quitting - dialogs would just delay exit
+    // 2. If cleanup fails, the user can manually kill the process
+    // -------------------------------------------------------------------------
     func cleanup() {
         DebugLog.shared.log("Cleanup called, isRunning: \(appState.isRunning)")
         if appState.isRunning {
-            stopKanata()
+            guard let pid = appState.kanataPID else {
+                DebugLog.shared.log("Cleanup: No PID stored")
+                return
+            }
+
+            DebugLog.shared.log("Cleanup: Stopping kanata (PID: \(pid))")
+            stopMonitoring()
+
+            // Attempt termination using SIGKILL - don't show UI alerts during cleanup
+            // SIGKILL ensures immediate termination during app quit
+            let success = processLauncher.terminate(pid: pid, signal: SIGKILL)
+
+            if success {
+                appState.kanataPID = nil
+                appState.isRunning = false
+                DebugLog.shared.log("Cleanup: Kanata terminated successfully")
+            } else {
+                // Log the failure but don't show UI - app is exiting anyway
+                DebugLog.shared.log("Cleanup: Failed to terminate kanata (PID \(pid)). Process may still be running.", level: .error)
+            }
         }
     }
 

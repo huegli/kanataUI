@@ -111,21 +111,28 @@ struct KanataUIApp: App {
             )
         } label: {
             // -----------------------------------------------------------------
-            // SF SYMBOLS AND RENDERING MODES
+            // SF SYMBOLS FOR STATE INDICATION
             // -----------------------------------------------------------------
             // SF Symbols are Apple's system icons. They automatically adapt
             // to the current context (light/dark mode, size, weight).
             //
-            // .symbolRenderingMode(.hierarchical) uses opacity variations
-            // to create depth in multi-layer symbols.
+            // UPDATED (v1.0.1): Use DIFFERENT icons for active vs inactive.
+            // Previously we used opacity to indicate state, but users reported
+            // the difference was not noticeable enough in the menu bar.
             //
-            // .opacity() modifies transparency. Here we use it to show
-            // running (full opacity) vs stopped (50% opacity) state.
-            // This is a common macOS menu bar pattern for status indication.
+            // New approach:
+            // - "keyboard.fill": Filled/solid icon when kanata is RUNNING
+            // - "keyboard": Outline icon when kanata is STOPPED
+            //
+            // This creates a much more visible distinction between states.
+            // The filled icon clearly signals "active/on" while the outline
+            // suggests "inactive/off" - a common iOS/macOS design pattern.
+            //
+            // .symbolRenderingMode(.hierarchical) adds depth to multi-layer
+            // symbols, though both keyboard variants are single-layer.
             // -----------------------------------------------------------------
-            Image(systemName: "keyboard")
+            Image(systemName: appState.isRunning ? "keyboard.fill" : "keyboard")
                 .symbolRenderingMode(.hierarchical)
-                .opacity(appState.isRunning ? 1.0 : 0.5)
         }
 
         // ---------------------------------------------------------------------
@@ -186,8 +193,21 @@ struct KanataUIApp: App {
     // terminates. Users expect that quitting your app stops everything
     // it started.
     //
-    // The closure captures `manager` to ensure we have a reference to it
-    // when the notification fires.
+    // IMPORTANT FIX (v1.0.1): The cleanup must run SYNCHRONOUSLY.
+    // Previously, we used `Task { @MainActor in ... }` which schedules
+    // the cleanup asynchronously. This caused a race condition where the
+    // app could exit BEFORE the cleanup completed, leaving the kanata
+    // process orphaned and running in the background.
+    //
+    // The fix uses MainActor.assumeIsolated() which:
+    // 1. Asserts we're already on the main thread (we are, via queue: .main)
+    // 2. Runs the closure synchronously, blocking until complete
+    // 3. Ensures cleanup finishes BEFORE the app terminates
+    //
+    // WHY NOT USE DispatchQueue.main.sync?
+    // DispatchQueue.main.sync would deadlock because we're already on main.
+    // MainActor.assumeIsolated() is the Swift concurrency way to say
+    // "I know I'm on the main actor, just run this code."
     // -------------------------------------------------------------------------
     private func setupTerminationHandler(manager: KanataManager) {
         NotificationCenter.default.addObserver(
@@ -195,10 +215,15 @@ struct KanataUIApp: App {
             object: nil,     // Observe from any sender
             queue: .main     // Handle on main thread (required for UI work)
         ) { _ in
-            // Task { @MainActor in ... } ensures this runs on the main thread.
-            // This is required because KanataManager is marked @MainActor.
-            // See KanataManager.swift for explanation of @MainActor.
-            Task { @MainActor in
+            // CRITICAL: Run cleanup SYNCHRONOUSLY to ensure it completes
+            // before the app exits. The previous async Task approach caused
+            // the kanata process to remain running after app quit.
+            //
+            // MainActor.assumeIsolated() tells the compiler "I'm already on
+            // the main actor, run this synchronously." This is safe because:
+            // 1. We specified queue: .main in addObserver
+            // 2. willTerminateNotification is always delivered on main thread
+            MainActor.assumeIsolated {
                 manager.cleanup()
             }
         }

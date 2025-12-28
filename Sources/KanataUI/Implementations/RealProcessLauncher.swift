@@ -114,9 +114,18 @@ final class RealProcessLauncher: ProcessLauncher {
     // CHALLENGE: If the target process is running as root (which kanata does),
     // we can't signal it directly - we get EPERM (permission denied).
     // Solution: Use osascript with admin privileges to run kill.
+    //
+    // IMPORTANT: This method returns a Bool indicating success or failure.
+    // The caller should check this value and handle failures appropriately
+    // (e.g., show an error message or keep the UI in the "running" state).
+    //
+    // WHY RETURN BOOL INSTEAD OF THROWING?
+    // Termination can fail for user-initiated reasons (canceling password prompt)
+    // that aren't really "errors" in the traditional sense. Returning Bool lets
+    // the caller decide how to handle each case without try-catch boilerplate.
     // -------------------------------------------------------------------------
 
-    func terminate(pid: Int, signal: Int32) {
+    func terminate(pid: Int, signal: Int32) -> Bool {
         DebugLog.shared.log("ProcessLauncher.terminate PID \(pid) with signal \(signal)")
 
         // First, try to kill the process directly
@@ -125,7 +134,22 @@ final class RealProcessLauncher: ProcessLauncher {
 
         if result == 0 {
             DebugLog.shared.log("kill() succeeded")
-            return
+            // Verify the process actually stopped.
+            // Use the same polling strategy as the sudo kill path.
+            let delays: [UInt32] = [0, 100_000, 200_000, 500_000, 1_000_000]
+            for (index, delay) in delays.enumerated() {
+                if delay > 0 {
+                    usleep(delay)
+                }
+                let stillRunning = isProcessRunning(pid: pid)
+                DebugLog.shared.log("Process check \(index + 1)/\(delays.count): stillRunning=\(stillRunning)")
+                if !stillRunning {
+                    DebugLog.shared.log("Process terminated successfully after \(index + 1) check(s)")
+                    return true
+                }
+            }
+            DebugLog.shared.log("Warning: Process still running after kill()", level: .warning)
+            return false
         }
 
         // If kill() failed, check errno to understand why
@@ -153,18 +177,65 @@ final class RealProcessLauncher: ProcessLauncher {
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
                 process.arguments = ["-e", appleScript]
 
-                // Discard output - we just care if it succeeds
+                // Capture stderr to detect user cancellation
+                // User cancellation produces AppleScript error -128
+                let errorPipe = Pipe()
                 process.standardOutput = FileHandle.nullDevice
-                process.standardError = FileHandle.nullDevice
+                process.standardError = errorPipe
 
                 try process.run()
                 process.waitUntilExit()
 
-                DebugLog.shared.log("sudo kill completed with status: \(process.terminationStatus)")
+                // Check for user cancellation (AppleScript error -128)
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+
+                if process.terminationStatus != 0 {
+                    DebugLog.shared.log("sudo kill failed with status: \(process.terminationStatus), stderr: \(errorOutput)", level: .error)
+
+                    // Check if user cancelled the password prompt
+                    if errorOutput.contains("-128") {
+                        DebugLog.shared.log("User cancelled password prompt for kill")
+                    }
+                    return false
+                }
+
+                DebugLog.shared.log("sudo kill completed successfully")
+
+                // Verify the process actually stopped.
+                // SIGTERM is a "graceful termination" request - the process may need
+                // time to clean up resources, close files, etc. We poll multiple times
+                // with increasing delays to give it a chance to exit.
+                //
+                // POLLING STRATEGY:
+                // - Check immediately, then after 100ms, 200ms, 500ms, 1000ms
+                // - Total max wait: ~1.8 seconds
+                // - This handles both fast exits and slower graceful shutdowns
+                let delays: [UInt32] = [0, 100_000, 200_000, 500_000, 1_000_000]
+                for (index, delay) in delays.enumerated() {
+                    if delay > 0 {
+                        usleep(delay)
+                    }
+                    let stillRunning = isProcessRunning(pid: pid)
+                    DebugLog.shared.log("Process check \(index + 1)/\(delays.count): stillRunning=\(stillRunning)")
+                    if !stillRunning {
+                        DebugLog.shared.log("Process terminated successfully after \(index + 1) check(s)")
+                        return true
+                    }
+                }
+
+                // Process still running after all retries - SIGTERM didn't work
+                DebugLog.shared.log("Process still running after all checks - SIGTERM may have been ignored", level: .warning)
+                return false
             } catch {
-                DebugLog.shared.log("sudo kill failed: \(error)", level: .error)
+                DebugLog.shared.log("sudo kill failed with exception: \(error)", level: .error)
+                return false
             }
         }
+
+        // For other errors (ESRCH = no such process, etc.), return false
+        DebugLog.shared.log("kill() failed with errno \(errnoValue)", level: .error)
+        return false
     }
 
     // -------------------------------------------------------------------------

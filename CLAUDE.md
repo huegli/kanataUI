@@ -7,8 +7,8 @@ The purpose of this application is to act as a UI interface to the kanata comman
 Kanata-UI shall be a macOS menu bar application.
 
 ### Menu Bar Icon
-- **Active state**: SF Symbol `keyboard` (when kanata is running)
-- **Inactive state**: SF Symbol `keyboard` with reduced opacity (when kanata is not running)
+- **Active state**: SF Symbol `keyboard.fill` (filled icon when kanata is running)
+- **Inactive state**: SF Symbol `keyboard` (outline icon when kanata is not running)
 
 ### User Interactions
 Standard macOS menu bar convention:
@@ -40,7 +40,8 @@ sudo /opt/homebrew/bin/kanata --cfg /Users/nikolai/dotfiles/kanata.kbd
 - Use `osascript` with `do shell script "..." with administrator privileges` to prompt for sudo password
 
 ### Process Termination
-- Use SIGTERM for graceful shutdown when stopping kanata
+- Use SIGKILL for immediate, reliable termination when stopping kanata
+- Note: SIGTERM was found to be ignored by kanata; SIGKILL cannot be caught or ignored
 
 ### Error Handling
 All error conditions are fatal - show alert and quit the application:
@@ -90,15 +91,15 @@ Test coverage:
 ### Manual Testing Checklist
 Integration scenarios requiring real system interaction:
 
-- [ ] App launches in inactive state (reduced opacity icon)
-- [ ] Click menu bar icon → shows context menu with status, toggle, quit
-- [ ] Start Kanata → prompts for password → icon becomes full opacity
-- [ ] Cancel password prompt → app quits silently
-- [ ] Stop Kanata → SIGTERM sent → icon returns to reduced opacity
-- [ ] Kill kanata process externally → alert shown → app quits
-- [ ] Start with missing kanata binary → alert → app quits
-- [ ] Start with missing config file → alert → app quits
-- [ ] Quit app while kanata running → kanata process terminated
+- [X] App launches in inactive state (reduced opacity icon)
+- [X] Click menu bar icon → shows context menu with status, toggle, quit
+- [X] Start Kanata → prompts for password → icon becomes full opacity
+- [X] Cancel password prompt → app quits silently
+- [X] Stop Kanata → SIGKILL sent → icon changes to outline
+- [X] Kill kanata process externally → alert shown → app quits
+- [X] Start with missing kanata binary → alert → app quits
+- [X] Start with missing config file → alert → app quits
+- [X] Quit app while kanata running → kanata process terminated
 
 ## Future Improvements
 

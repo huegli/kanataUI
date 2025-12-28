@@ -107,12 +107,17 @@ protocol ProcessLauncher {
     /// - Parameters:
     ///   - pid: The process ID to terminate
     ///   - signal: The signal to send (e.g., SIGTERM for graceful, SIGKILL for force)
+    /// - Returns: true if the process was successfully terminated, false otherwise
     ///
-    /// Note: This method doesn't throw because:
-    /// - Termination errors are usually not recoverable
-    /// - The process might already be dead
-    /// - We log errors internally for debugging
-    func terminate(pid: Int, signal: Int32)
+    /// IMPORTANT: This method returns a Bool to indicate success or failure.
+    /// Callers should check the return value and handle termination failures
+    /// appropriately (e.g., show an error to the user or retry with SIGKILL).
+    ///
+    /// The method may fail if:
+    /// - The process requires elevated privileges to terminate (runs as root)
+    /// - The user cancels the password prompt for sudo kill
+    /// - The process has already exited
+    func terminate(pid: Int, signal: Int32) -> Bool
 
     /// Checks if a process is currently running.
     ///
