@@ -276,6 +276,25 @@ struct MenuContent: View {
     @Environment(\.openWindow) private var openWindow
 
     // -------------------------------------------------------------------------
+    // APP VERSION - COMPUTED PROPERTY
+    // -------------------------------------------------------------------------
+    // Reads the version from the app's Info.plist bundle dictionary.
+    // CFBundleShortVersionString is the standard macOS key for the
+    // user-facing version number (e.g., "1.0.2").
+    //
+    // Bundle.main.infoDictionary contains all keys from Info.plist.
+    // We use optional chaining (?[]) and nil coalescing (??) to safely
+    // handle cases where the key doesn't exist (e.g., during development
+    // without a full app bundle).
+    //
+    // BEST PRACTICE: Always provide a fallback for bundle values since
+    // they may not be available in all execution contexts.
+    // -------------------------------------------------------------------------
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.2"
+    }
+
+    // -------------------------------------------------------------------------
     // VIEW BODY - THE UI DECLARATION
     // -------------------------------------------------------------------------
     // This is where we declare what the view looks like. SwiftUI views
@@ -287,6 +306,19 @@ struct MenuContent: View {
     // The body is called whenever SwiftUI needs to update the UI.
     // -------------------------------------------------------------------------
     var body: some View {
+        // ---------------------------------------------------------------------
+        // ABOUT SECTION
+        // ---------------------------------------------------------------------
+        // Display app name and version as the first menu item.
+        // This follows macOS conventions where About info appears at the top.
+        // Using .foregroundStyle(.secondary) dims the text to indicate it's
+        // informational rather than an actionable item.
+        // ---------------------------------------------------------------------
+        Text("Kanata-UI v\(appVersion)")
+            .foregroundStyle(.secondary)
+
+        Divider()
+
         // Text view displaying the current status
         // String interpolation with \() works inside string literals
         Text("Kanata: \(appState.isRunning ? "Running" : "Stopped")")

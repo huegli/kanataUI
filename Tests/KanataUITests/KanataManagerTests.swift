@@ -251,7 +251,7 @@ struct KanataManagerTests {
         #expect(appState.kanataPID == nil)
         #expect(processLauncher.terminateCalled)
         #expect(processLauncher.terminatedPID == 12345)
-        #expect(processLauncher.terminatedSignal == SIGTERM)
+        #expect(processLauncher.terminatedSignal == SIGKILL)
     }
 
     // -------------------------------------------------------------------------
