@@ -55,9 +55,14 @@ All error conditions are fatal - show alert and quit the application:
 | User cancels sudo prompt | Quit silently (no alert) |
 
 ## Implementation & Development
+### Tech Stack
 - Swift/SwiftUI (macOS only)
 - Xcode Project
 - macOS 26 (Tahoe)
+### Development Cycle
+- Each time you make a change, increase the the 3rd number in the version number. Do not increase the second or first number unless explicitly asked
+- After each change, run the tests to ensure nothing has been broken and rebuild the application
+- If successful, check in all changes with a meaningful commit message
 
 ## Comments
 - Add detailed comments to all the files that make up this project.
