@@ -67,28 +67,16 @@ final class RealSystemDialogs: SystemDialogs {
         // Create and configure the alert
         let alert = NSAlert()
         alert.messageText = title           // The bold title text
-        alert.informativeText = message     // The smaller body text
+        // Append a note about viewing logs in Console.app
+        alert.informativeText = message + "\n\nView debug logs in Console.app (search: subsystem:com.nikolai.KanataUI)"
         alert.alertStyle = .critical        // Red warning icon
 
-        // Add buttons - they appear right-to-left
-        // First button added is the "default" (rightmost) button
+        // Add buttons - Quit is the only option for fatal errors
         alert.addButton(withTitle: "Quit")
-        alert.addButton(withTitle: "Copy Debug Log")
 
         // Show the alert and wait for user response
         // runModal() blocks until the user clicks a button
-        let response = alert.runModal()
-
-        // Check which button was clicked
-        // .alertFirstButtonReturn = first button added (Quit)
-        // .alertSecondButtonReturn = second button added (Copy Debug Log)
-        if response == .alertSecondButtonReturn {
-            // User wants to copy the debug log before quitting
-            // This is helpful for bug reports
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.setString(DebugLog.shared.formattedLog, forType: .string)
-        }
+        alert.runModal()
 
         // Terminate the application
         // This is why it's called "fatal" - the app always quits

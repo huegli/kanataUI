@@ -71,7 +71,6 @@ struct KanataUIApp: App {
     // -------------------------------------------------------------------------
     @State private var appState = AppState()
     @State private var kanataManager: KanataManager?
-    @State private var showingDebugLog = false
 
     // -------------------------------------------------------------------------
     // THE BODY PROPERTY (Required by App protocol)
@@ -106,8 +105,7 @@ struct KanataUIApp: App {
         MenuBarExtra {
             MenuContent(
                 appState: appState,
-                kanataManager: kanataManager,
-                showDebugLog: { showingDebugLog = true }
+                kanataManager: kanataManager
             )
         } label: {
             // -----------------------------------------------------------------
@@ -135,19 +133,6 @@ struct KanataUIApp: App {
                 .symbolRenderingMode(.hierarchical)
         }
 
-        // ---------------------------------------------------------------------
-        // WINDOW SCENE
-        // ---------------------------------------------------------------------
-        // Window creates a standard macOS window. The `id` parameter allows
-        // us to open it programmatically using `openWindow(id: "debug-log")`.
-        //
-        // .defaultSize() sets the initial window dimensions. Users can
-        // resize it, but this is the starting size.
-        // ---------------------------------------------------------------------
-        Window("Debug Log", id: "debug-log") {
-            DebugLogView()
-        }
-        .defaultSize(width: 600, height: 400)
     }
 
     // -------------------------------------------------------------------------
@@ -258,29 +243,13 @@ struct MenuContent: View {
     // -------------------------------------------------------------------------
     let appState: AppState
     let kanataManager: KanataManager?
-    let showDebugLog: () -> Void  // A closure (function) with no params/return
-
-    // -------------------------------------------------------------------------
-    // @Environment PROPERTY WRAPPER
-    // -------------------------------------------------------------------------
-    // @Environment reads values from SwiftUI's environment system. The
-    // environment is like a dependency injection container that flows down
-    // through the view hierarchy.
-    //
-    // `\.openWindow` is a KEY PATH that identifies which environment value
-    // to read. Key paths in Swift are type-safe references to properties.
-    //
-    // `openWindow` is an action that lets us open windows by their ID.
-    // This is how we open the debug log window from a menu button.
-    // -------------------------------------------------------------------------
-    @Environment(\.openWindow) private var openWindow
 
     // -------------------------------------------------------------------------
     // APP VERSION - COMPUTED PROPERTY
     // -------------------------------------------------------------------------
     // Reads the version from the app's Info.plist bundle dictionary.
     // CFBundleShortVersionString is the standard macOS key for the
-    // user-facing version number (e.g., "1.0.2").
+    // user-facing version number (e.g., "1.0.3").
     //
     // Bundle.main.infoDictionary contains all keys from Info.plist.
     // We use optional chaining (?[]) and nil coalescing (??) to safely
@@ -291,7 +260,7 @@ struct MenuContent: View {
     // they may not be available in all execution contexts.
     // -------------------------------------------------------------------------
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.2"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.3"
     }
 
     // -------------------------------------------------------------------------
@@ -392,23 +361,23 @@ struct MenuContent: View {
             }
         }
 
-        Menu("Debug") {
-            Button("Show Debug Log") {
-                // Use the environment's openWindow action to open our window
-                openWindow(id: "debug-log")
-            }
-
-            Button("Copy Debug Log") {
-                // NSPasteboard is macOS's clipboard API
-                // BEST PRACTICE: Always clearContents() before setting new data
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(DebugLog.shared.formattedLog, forType: .string)
-            }
-
-            Button("Show Kanata Log in Finder") {
-                NSWorkspace.shared.selectFile(KanataManager.logFilePath, inFileViewerRootedAtPath: "")
-            }
+        // ---------------------------------------------------------------------
+        // VIEW DEBUG LOG - OPENS CONSOLE.APP
+        // ---------------------------------------------------------------------
+        // Opens Console.app with a predefined search filter for this app's
+        // subsystem. This leverages macOS's unified logging system (os.log)
+        // which automatically captures and persists all our log messages.
+        //
+        // The URL scheme "x-apple.systempreferences:" is for System Settings.
+        // For Console.app, we use NSWorkspace to open the app directly.
+        //
+        // CONSOLE.APP TIPS FOR USERS:
+        // - After opening, type "subsystem:com.nikolai.KanataUI" in search
+        // - Enable "Include Info Messages" from the Action menu to see all logs
+        // ---------------------------------------------------------------------
+        Button("View Debug Log") {
+            // Open Console.app - the standard macOS log viewer
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Console.app"))
         }
 
         Divider()
@@ -426,89 +395,5 @@ struct MenuContent: View {
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q")
-    }
-}
-
-// =============================================================================
-// DebugLogView - A WINDOW FOR VIEWING LOG OUTPUT
-// =============================================================================
-// This view is displayed in the debug log window. It demonstrates:
-// - Timer-based updates with Combine's publish(every:)
-// - Text selection and scrolling
-// - Copy to clipboard functionality
-// =============================================================================
-
-struct DebugLogView: View {
-    // @State for local mutable data that this view owns
-    @State private var logText = ""
-
-    // -------------------------------------------------------------------------
-    // TIMER WITH COMBINE
-    // -------------------------------------------------------------------------
-    // Timer.publish creates a Combine publisher that emits values at intervals.
-    // .autoconnect() starts it immediately. This is used to periodically
-    // refresh the log display.
-    //
-    // ALTERNATIVE: For more complex cases, consider using .onChange() or
-    // the Observation framework to react to actual data changes instead
-    // of polling.
-    // -------------------------------------------------------------------------
-    let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-
-    var body: some View {
-        // VStack arranges children vertically
-        // alignment: .leading aligns children to the left edge
-        // spacing: 8 adds 8 points between children
-        VStack(alignment: .leading, spacing: 8) {
-            // HStack arranges children horizontally
-            HStack {
-                Text("Debug Log")
-                    .font(.headline)
-
-                // Spacer pushes subsequent items to the right
-                Spacer()
-
-                Button("Copy") {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(logText, forType: .string)
-                }
-
-                Button("Clear") {
-                    DebugLog.shared.clear()
-                    logText = ""
-                }
-            }
-            .padding(.horizontal)
-            .padding(.top)
-
-            // ScrollView allows content to scroll when it exceeds bounds
-            ScrollView {
-                Text(logText.isEmpty ? "(no log entries)" : logText)
-                    .font(.system(.body, design: .monospaced))  // Fixed-width font
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)  // Allow selecting text
-                    .padding()
-            }
-            // nsColor bridges to AppKit's NSColor for system colors
-            .background(Color(nsColor: .textBackgroundColor))
-        }
-        // ---------------------------------------------------------------------
-        // VIEW LIFECYCLE MODIFIERS
-        // ---------------------------------------------------------------------
-        // .onAppear runs code when the view first appears on screen.
-        // Good for initial data loading.
-        // ---------------------------------------------------------------------
-        .onAppear {
-            logText = DebugLog.shared.formattedLog
-        }
-        // ---------------------------------------------------------------------
-        // .onReceive subscribes to a Combine publisher (our timer).
-        // Each time the timer fires, this closure runs.
-        // The `_` ignores the timer's output value (we don't need it).
-        // ---------------------------------------------------------------------
-        .onReceive(timer) { _ in
-            logText = DebugLog.shared.formattedLog
-        }
     }
 }
