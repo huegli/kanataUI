@@ -287,7 +287,7 @@ struct MenuContent: View {
     // -------------------------------------------------------------------------
     // Reads the version from the app's Info.plist bundle dictionary.
     // CFBundleShortVersionString is the standard macOS key for the
-    // user-facing version number (e.g., "1.0.8").
+    // user-facing version number (e.g., "1.0.9").
     //
     // Bundle.main.infoDictionary contains all keys from Info.plist.
     // We use optional chaining (?[]) and nil coalescing (??) to safely
@@ -298,7 +298,7 @@ struct MenuContent: View {
     // they may not be available in all execution contexts.
     // -------------------------------------------------------------------------
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.8"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.9"
     }
 
     // -------------------------------------------------------------------------

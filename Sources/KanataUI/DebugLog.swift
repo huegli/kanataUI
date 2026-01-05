@@ -116,8 +116,6 @@ final class DebugLog {
     // - .warning: Visible by default
     // - .info: Hidden by default; enable "Include Info Messages" in Console.app
     //
-    // Also prints to stdout for immediate visibility during development
-    // (when running from Xcode or terminal).
     // -------------------------------------------------------------------------
     func log(_ message: String, level: Level = .info) {
         // Log to Apple's unified logging system
@@ -133,9 +131,5 @@ final class DebugLog {
         case .error:
             logger.error("\(message, privacy: .public)")
         }
-
-        // Also print to stdout for development visibility
-        // This is helpful when running from Xcode or terminal
-        print("[\(level.rawValue)] \(message)")
     }
 }

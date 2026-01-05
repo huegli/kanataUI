@@ -83,6 +83,7 @@ Most error conditions are fatal (show alert and quit). Config validation errors 
 - Each time you make a change, increase the the 3rd number in the version number. Do not increase the second or first number unless explicitly asked
 - After each change, run the tests to ensure nothing has been broken and rebuild the application
 - If successful, check in all changes with a meaningful commit message
+- IMPORTANT: Update CLAUDE.md if the actual implementation no longer matches what is specified in CLAUDE.md
 
 ## Comments
 - Add detailed comments to all the files that make up this project.
@@ -138,15 +139,5 @@ Integration scenarios requiring real system interaction:
 - **Configurable paths**: User-editable kanata binary and config file paths via a preferences window
 - **Launch at login**: Option to start Kanata-UI automatically when macOS starts
 
-### Multiple Configurations
-- Support for multiple kanata config files
-- Quick-switch between configurations from the menu
-- Remember last-used configuration
-
-### Monitoring & Debugging
-- **Log viewer**: Window to display kanata stdout/stderr output
-
 ### UX Enhancements
-- **Global keyboard shortcut**: System-wide hotkey to toggle kanata on/off
 - **macOS notifications**: Use Notification Center for state changes instead of blocking alerts
-- **Touch Bar support**: Quick toggle button for MacBooks with Touch Bar
