@@ -62,6 +62,11 @@ enum KanataError: Error {
     /// The kanata configuration file was not found
     case configNotFound
 
+    /// The kanata configuration file failed validation.
+    /// ASSOCIATED VALUE: Contains the error output from `kanata --check`.
+    /// Usage: throw KanataError.configInvalid("Error on line 5: unknown key")
+    case configInvalid(String)
+
     /// Kanata failed to launch. Associated String contains error details.
     /// ASSOCIATED VALUE: The (String) part means this case carries data.
     /// Usage: throw KanataError.launchFailed("Permission denied")
@@ -199,14 +204,87 @@ final class KanataManager {
     }
 
     // -------------------------------------------------------------------------
+    // validateConfig() - VALIDATE KANATA CONFIGURATION FILE
+    // -------------------------------------------------------------------------
+    // Runs `kanata --check --cfg <config>` to validate the configuration file
+    // before attempting to launch kanata.
+    //
+    // WHY VALIDATE BEFORE LAUNCHING?
+    // - Kanata requires sudo to run (for keyboard access)
+    // - If the config is invalid, kanata will fail immediately after prompting
+    //   for the password, which is a poor user experience
+    // - By validating first (without sudo), we can catch config errors before
+    //   the user enters their password
+    //
+    // The --check flag tells kanata to parse and validate the config without
+    // actually starting the keyboard remapping daemon.
+    // -------------------------------------------------------------------------
+
+    /// Validates the kanata configuration file using `kanata --check`.
+    /// - Throws: KanataError.configInvalid if validation fails
+    func validateConfig() throws {
+        DebugLog.shared.log("Validating config file...")
+
+        // Build the validation command
+        // --check: Validate config without starting kanata
+        // --cfg: Path to the configuration file
+        let command = "\(Self.kanataBinaryPath) --check --cfg \(Self.kanataConfigPath)"
+        DebugLog.shared.log("Validation command: \(command)")
+
+        // Create a Process to run the validation
+        // Unlike launching kanata itself, validation doesn't need sudo
+        // because it doesn't access the keyboard hardware
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", command]
+
+        // Capture both stdout and stderr
+        // kanata outputs validation errors to stderr
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            // Read output for logging
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let stdout = String(data: outputData, encoding: .utf8) ?? ""
+            let stderr = String(data: errorData, encoding: .utf8) ?? ""
+
+            // terminationStatus 0 means success
+            if process.terminationStatus == 0 {
+                DebugLog.shared.log("Config validation: OK")
+                return
+            }
+
+            // Validation failed - combine output for error message
+            let errorOutput = stderr.isEmpty ? stdout : stderr
+            DebugLog.shared.log("Config validation failed:\n\(errorOutput)", level: .error)
+            throw KanataError.configInvalid(errorOutput)
+        } catch let error as KanataError {
+            // Re-throw KanataError (our own error from above)
+            throw error
+        } catch {
+            // Other errors (e.g., process launch failure)
+            DebugLog.shared.log("Config validation process error: \(error)", level: .error)
+            throw KanataError.configInvalid("Failed to run validation: \(error.localizedDescription)")
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // startKanata() - MAIN ORCHESTRATION METHOD
     // -------------------------------------------------------------------------
     // This method coordinates the process of starting kanata:
-    // 1. Validate environment
-    // 2. Build and run the privileged script
-    // 3. Parse the returned PID
-    // 4. Verify the process started successfully
-    // 5. Update state and start monitoring
+    // 1. Validate environment (binary and config file exist)
+    // 2. Validate config file syntax using `kanata --check`
+    // 3. Build and run the privileged script
+    // 4. Parse the returned PID
+    // 5. Verify the process started successfully
+    // 6. Update state and start monitoring
     //
     // Note this is NOT a throwing function - it handles errors internally
     // by showing alerts to the user.
@@ -239,6 +317,31 @@ final class KanataManager {
             // Catch any other error (the `error` variable is automatically available)
             systemDialogs.showFatalAlert(
                 title: "Validation Error",
+                message: error.localizedDescription
+            )
+            return
+        }
+
+        // ---------------------------------------------------------------------
+        // CONFIG VALIDATION
+        // ---------------------------------------------------------------------
+        // Validate the config file BEFORE prompting for the password.
+        // This provides a better user experience - if the config has errors,
+        // we catch them before the user enters their password.
+        // ---------------------------------------------------------------------
+        do {
+            try validateConfig()
+        } catch KanataError.configInvalid(let errorOutput) {
+            // Show the validation error to the user
+            // Limit to first 500 characters to avoid overwhelming the alert
+            systemDialogs.showFatalAlert(
+                title: "Config Validation Failed",
+                message: "The kanata configuration file has errors:\n\n\(errorOutput.prefix(500))"
+            )
+            return
+        } catch {
+            systemDialogs.showFatalAlert(
+                title: "Config Validation Error",
                 message: error.localizedDescription
             )
             return

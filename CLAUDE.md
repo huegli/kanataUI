@@ -21,7 +21,10 @@ Standard macOS menu bar convention:
 - Quit option
 
 ### Initial State
-- The app always starts in the inactive state on launch
+- The app automatically starts kanata on launch after validating the configuration file
+- Config validation uses `kanata --check --cfg <config>` (does not require sudo)
+- If validation passes, the app prompts for password and launches kanata
+- If validation fails, the app shows an error and quits
 
 ### Quitting Behavior
 - When the app quits, it must also terminate the kanata process (via SIGTERM)
@@ -35,6 +38,12 @@ sudo /opt/homebrew/bin/kanata --cfg /Users/nikolai/dotfiles/kanata.kbd
 
 ### Configuration
 - Config path is hardcoded to `/Users/nikolai/dotfiles/kanata.kbd`
+
+### Config Validation
+- Before launching kanata, validate the config file using `kanata --check --cfg <config>`
+- This runs without sudo (no keyboard access needed for validation)
+- Validates config syntax before prompting for password (better UX)
+- If validation fails, show the error output and quit
 
 ### Authentication
 - Use `osascript` with `do shell script "..." with administrator privileges` to prompt for sudo password
@@ -50,6 +59,7 @@ All error conditions are fatal - show alert and quit the application:
 |----------|----------|
 | Kanata binary missing | Alert, then quit |
 | Config file missing | Alert, then quit |
+| Config validation fails | Alert with error details, then quit |
 | Kanata process crashes | Alert, then quit |
 | Launch failure | Alert, then quit |
 | User cancels sudo prompt | Quit silently (no alert) |
@@ -96,15 +106,16 @@ Test coverage:
 ### Manual Testing Checklist
 Integration scenarios requiring real system interaction:
 
-- [X] App launches in inactive state (reduced opacity icon)
-- [X] Click menu bar icon → shows context menu with status, toggle, quit
-- [X] Start Kanata → prompts for password → icon becomes full opacity
-- [X] Cancel password prompt → app quits silently
-- [X] Stop Kanata → SIGKILL sent → icon changes to outline
-- [X] Kill kanata process externally → alert shown → app quits
-- [X] Start with missing kanata binary → alert → app quits
-- [X] Start with missing config file → alert → app quits
-- [X] Quit app while kanata running → kanata process terminated
+- [ ] App launches → validates config → prompts for password → kanata starts → filled icon
+- [ ] Click menu bar icon → shows context menu with status, toggle, quit
+- [ ] Stop Kanata → SIGKILL sent → icon changes to outline
+- [ ] Start Kanata (after stopping) → prompts for password → icon becomes filled
+- [ ] Cancel password prompt on launch → app quits silently
+- [ ] Kill kanata process externally → alert shown → app quits
+- [ ] Start with missing kanata binary → alert → app quits
+- [ ] Start with missing config file → alert → app quits
+- [ ] Start with invalid config file → validation error alert → app quits
+- [ ] Quit app while kanata running → kanata process terminated
 
 ## Future Improvements
 
@@ -113,7 +124,6 @@ Integration scenarios requiring real system interaction:
 ### Settings & Configuration
 - **Configurable paths**: User-editable kanata binary and config file paths via a preferences window
 - **Launch at login**: Option to start Kanata-UI automatically when macOS starts
-- **Auto-start kanata**: Option to automatically start kanata when the app launches
 
 ### Multiple Configurations
 - Support for multiple kanata config files
@@ -122,7 +132,6 @@ Integration scenarios requiring real system interaction:
 
 ### Monitoring & Debugging
 - **Log viewer**: Window to display kanata stdout/stderr output
-- **Config validation**: Check config file syntax before launching kanata
 
 ### UX Enhancements
 - **Global keyboard shortcut**: System-wide hotkey to toggle kanata on/off
