@@ -4,7 +4,7 @@ set -e
 # Build configuration
 APP_NAME="KanataUI"
 BUNDLE_ID="com.nikolai.KanataUI"
-VERSION="1.0.5"
+VERSION="1.0.6"
 BUILD_DIR="Build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 

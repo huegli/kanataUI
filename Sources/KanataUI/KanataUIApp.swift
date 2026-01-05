@@ -167,24 +167,8 @@ struct KanataUIApp: App {
         // Set up cleanup when the app terminates
         setupTerminationHandler(manager: manager)
 
-        // ---------------------------------------------------------------------
-        // AUTO-START KANATA ON LAUNCH
-        // ---------------------------------------------------------------------
-        // Automatically start kanata when the app launches. This is scheduled
-        // as a Task to ensure the UI is fully initialized before we start
-        // the potentially blocking operations (config validation, password prompt).
-        //
-        // The flow is:
-        // 1. Validate environment (binary and config exist)
-        // 2. Validate config file syntax using `kanata --check`
-        // 3. Prompt for password and launch kanata
-        //
-        // If any step fails, the app shows an alert and quits (as per spec).
-        // If the user cancels the password prompt, the app quits silently.
-        // ---------------------------------------------------------------------
-        Task { @MainActor in
-            manager.startKanata()
-        }
+        // Set up auto-start when the app finishes launching
+        setupLaunchHandler(manager: manager)
     }
 
     // -------------------------------------------------------------------------
@@ -232,6 +216,41 @@ struct KanataUIApp: App {
             }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // AUTO-START ON LAUNCH
+    // -------------------------------------------------------------------------
+    // Automatically start kanata when the app finishes launching.
+    //
+    // WHY USE didFinishLaunchingNotification INSTEAD OF init()?
+    // - init() runs before the UI is fully set up
+    // - The password prompt (osascript) can block the main thread
+    // - If this happens before MenuBarExtra is ready, the icon won't appear
+    //
+    // By waiting for didFinishLaunchingNotification, we ensure:
+    // 1. The MenuBarExtra is visible in the menu bar
+    // 2. The app is fully initialized and ready for user interaction
+    // 3. The password dialog appears on top of a properly set up app
+    //
+    // The flow is:
+    // 1. Validate environment (binary and config exist)
+    // 2. Validate config file syntax using `kanata --check`
+    // 3. Prompt for password and launch kanata
+    //
+    // If any step fails, the app shows an alert and quits.
+    // If the user cancels the password prompt, the app quits silently.
+    // -------------------------------------------------------------------------
+    private func setupLaunchHandler(manager: KanataManager) {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didFinishLaunchingNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                manager.startKanata()
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -268,7 +287,7 @@ struct MenuContent: View {
     // -------------------------------------------------------------------------
     // Reads the version from the app's Info.plist bundle dictionary.
     // CFBundleShortVersionString is the standard macOS key for the
-    // user-facing version number (e.g., "1.0.5").
+    // user-facing version number (e.g., "1.0.6").
     //
     // Bundle.main.infoDictionary contains all keys from Info.plist.
     // We use optional chaining (?[]) and nil coalescing (??) to safely
@@ -279,7 +298,7 @@ struct MenuContent: View {
     // they may not be available in all execution contexts.
     // -------------------------------------------------------------------------
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.5"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.6"
     }
 
     // -------------------------------------------------------------------------
