@@ -16,8 +16,11 @@ Standard macOS menu bar convention:
 - **Right-click**: Show context menu (same behavior)
 
 ### Context Menu
-- Status indicator (Running/Stopped)
-- Toggle option (Start Kanata / Stop Kanata)
+- Status indicator (Running/Stopped with PID)
+- Edit Config (opens config file in TextEdit)
+- Relaunch (stops kanata if running, then restarts with updated config)
+- Settings submenu (system settings, reveal files in Finder)
+- View Debug Log (opens Console.app)
 - Quit option
 
 ### Initial State
@@ -114,14 +117,15 @@ Test coverage:
 Integration scenarios requiring real system interaction:
 
 - [ ] App launches → validates config → prompts for password → kanata starts → filled icon
-- [ ] Click menu bar icon → shows context menu with status, toggle, quit
-- [ ] Stop Kanata → SIGKILL sent → icon changes to outline
-- [ ] Start Kanata (after stopping) → prompts for password → icon becomes filled
+- [ ] Click menu bar icon → shows context menu with status, Edit Config, Relaunch, Settings, Quit
+- [ ] Edit Config → TextEdit opens with config file
+- [ ] Relaunch → stops current process → validates config → prompts for password → restarts
+- [ ] Relaunch with invalid config → shows error dialog with Edit/Recheck/Quit options
 - [ ] Cancel password prompt on launch → app quits silently
 - [ ] Kill kanata process externally → alert shown → app quits
 - [ ] Start with missing kanata binary → alert → app quits
 - [ ] Start with missing config file → alert → app quits
-- [ ] Invalid config → alert with 3 buttons → click Quit → app quits
+- [ ] Invalid config on launch → alert with 3 buttons → click Quit → app quits
 - [ ] Invalid config → click Edit Config → TextEdit opens → alert shown again
 - [ ] Invalid config → fix config externally → click Recheck → validation passes → continues
 - [ ] Quit app while kanata running → kanata process terminated

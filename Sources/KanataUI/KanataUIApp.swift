@@ -287,7 +287,7 @@ struct MenuContent: View {
     // -------------------------------------------------------------------------
     // Reads the version from the app's Info.plist bundle dictionary.
     // CFBundleShortVersionString is the standard macOS key for the
-    // user-facing version number (e.g., "1.0.7").
+    // user-facing version number (e.g., "1.0.8").
     //
     // Bundle.main.infoDictionary contains all keys from Info.plist.
     // We use optional chaining (?[]) and nil coalescing (??) to safely
@@ -298,7 +298,7 @@ struct MenuContent: View {
     // they may not be available in all execution contexts.
     // -------------------------------------------------------------------------
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.7"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.8"
     }
 
     // -------------------------------------------------------------------------
@@ -343,21 +343,36 @@ struct MenuContent: View {
         Divider()
 
         // ---------------------------------------------------------------------
-        // BUTTON WITH CLOSURE ACTION
+        // EDIT CONFIG BUTTON
         // ---------------------------------------------------------------------
-        // Button takes a label (text) and an action closure (what to do when
-        // clicked). The trailing closure syntax puts the action outside the
-        // parentheses for readability.
+        // Opens the kanata configuration file in TextEdit for editing.
+        // Uses the same approach as the config error dialog - launch TextEdit
+        // via the `open -a TextEdit` command.
         //
-        // The ternary operator (condition ? valueIfTrue : valueIfFalse)
-        // switches the button text and action based on state.
+        // This allows users to quickly edit their config without navigating
+        // to the file manually.
         // ---------------------------------------------------------------------
-        Button(appState.isRunning ? "Stop Kanata" : "Start Kanata") {
-            if appState.isRunning {
-                kanataManager?.stopKanata()
-            } else {
-                kanataManager?.startKanata()
-            }
+        Button("Edit Config") {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = ["-a", "TextEdit", KanataManager.kanataConfigPath]
+            try? process.run()
+        }
+
+        // ---------------------------------------------------------------------
+        // RELAUNCH BUTTON
+        // ---------------------------------------------------------------------
+        // Stops the currently running kanata process and relaunches it.
+        // This is useful after editing the config file - the user can reload
+        // the new configuration without manually stopping and starting.
+        //
+        // The relaunchKanata() method handles:
+        // 1. Stopping the current process (if running)
+        // 2. Re-validating the config (catches any new errors)
+        // 3. Relaunching with the updated config
+        // ---------------------------------------------------------------------
+        Button("Relaunch") {
+            kanataManager?.relaunchKanata()
         }
 
         Divider()

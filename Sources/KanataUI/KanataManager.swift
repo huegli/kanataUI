@@ -508,6 +508,66 @@ final class KanataManager {
     }
 
     // -------------------------------------------------------------------------
+    // relaunchKanata() - STOP AND RESTART KANATA
+    // -------------------------------------------------------------------------
+    // Convenience method that stops the currently running kanata process and
+    // relaunches it with the (potentially updated) configuration.
+    //
+    // USE CASES:
+    // - User edited the config file and wants to reload it
+    // - Kanata is behaving unexpectedly and needs a fresh start
+    //
+    // FLOW:
+    // 1. Stop the current kanata process (if running)
+    // 2. Call startKanata() which will:
+    //    a. Validate the environment
+    //    b. Validate the config (with Edit/Recheck/Quit options if invalid)
+    //    c. Prompt for password
+    //    d. Launch kanata
+    //
+    // If stopping fails (e.g., user cancels password), we don't proceed with
+    // relaunch since the old process is still running.
+    // -------------------------------------------------------------------------
+    func relaunchKanata() {
+        DebugLog.shared.log("=== Relaunching Kanata ===")
+
+        // If kanata is running, stop it first
+        if appState.isRunning {
+            DebugLog.shared.log("Stopping current kanata process before relaunch...")
+
+            guard let pid = appState.kanataPID else {
+                DebugLog.shared.log("No PID stored, proceeding with start")
+                startKanata()
+                return
+            }
+
+            // Stop monitoring to prevent crash detection during intentional stop
+            stopMonitoring()
+
+            // Attempt to terminate
+            let success = processLauncher.terminate(pid: pid, signal: SIGKILL)
+
+            if success {
+                appState.kanataPID = nil
+                appState.isRunning = false
+                DebugLog.shared.log("Old process stopped, now relaunching...")
+            } else {
+                // Termination failed - don't proceed with relaunch
+                DebugLog.shared.log("Failed to stop kanata for relaunch", level: .error)
+                startMonitoring()  // Resume monitoring since process is still running
+                systemDialogs.showAlert(
+                    title: "Relaunch Failed",
+                    message: "Could not stop the current kanata process (PID \(pid)).\n\nPlease try again or manually stop the process first."
+                )
+                return
+            }
+        }
+
+        // Now start kanata (validates config, prompts for password, etc.)
+        startKanata()
+    }
+
+    // -------------------------------------------------------------------------
     // cleanup() - APP TERMINATION CLEANUP
     // -------------------------------------------------------------------------
     // Called when the app is terminating to ensure the kanata process is stopped.
