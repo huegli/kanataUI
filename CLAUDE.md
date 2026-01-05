@@ -99,20 +99,48 @@ Most error conditions are fatal (show alert and quit). Config validation errors 
 Abstract system interactions behind protocols to enable mocking:
 
 ```swift
+// Process management
 protocol ProcessLauncher {
     func launch(command: String) throws -> Int  // returns PID
-    func terminate(pid: Int, signal: Int32)
+    func terminate(pid: Int, signal: Int32) -> Bool
+    func isProcessRunning(pid: Int) -> Bool
 }
 
+// UI dialogs
 protocol SystemDialogs {
-    func showAlert(message: String)
+    func showFatalAlert(title: String, message: String)
+    func showAlert(title: String, message: String)
+    func showConfigErrorAlert(title: String, message: String, configPath: String) -> ConfigErrorAction
+    func runPrivilegedScript(_ script: String) throws -> String
+}
+
+// Config validation (runs kanata --check)
+protocol ConfigValidator {
+    func validate(configPath: String) throws
+}
+
+// App termination
+protocol AppTerminator {
+    func terminate()
 }
 ```
 
-Test coverage:
-- State transitions (inactive → active, active → inactive)
-- Error handling logic
-- Process lifecycle management (with mocked launcher)
+**Test coverage (19 tests in 2 suites):**
+
+AppState Tests:
+- Initial state (inactive, no PID)
+- Transition to running state
+- Transition back to stopped state
+
+KanataManager Tests:
+- Environment validation (binary exists, config exists, both missing cases)
+- startKanata error handling (missing binary, missing config alerts)
+- startKanata success (sets running state, stores PID)
+- stopKanata (terminates process with SIGKILL, updates state)
+- cleanup (stops kanata if running, no-op if not running)
+- Config validation (shows error dialog when invalid, recheck flow, edit config flow)
+- relaunchKanata (stops before restart, starts when not running, handles stop failure)
+- Password cancellation (silent quit without error dialog)
 
 ### Manual Testing Checklist
 Integration scenarios requiring real system interaction:

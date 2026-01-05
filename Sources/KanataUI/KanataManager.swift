@@ -135,6 +135,12 @@ final class KanataManager {
     /// File system operations (checking if files exist)
     private let fileManager: FileManager
 
+    /// Validates kanata config files
+    private let configValidator: ConfigValidator
+
+    /// Handles app termination (mockable for testing)
+    private let appTerminator: AppTerminator
+
     /// Timer for monitoring the kanata process
     private var monitorTimer: Timer?
 
@@ -155,12 +161,18 @@ final class KanataManager {
         appState: AppState,
         processLauncher: ProcessLauncher,
         systemDialogs: SystemDialogs,
-        fileManager: FileManager = .default  // Default parameter value
+        fileManager: FileManager = .default,  // Default parameter value
+        configValidator: ConfigValidator? = nil,  // Optional, uses real validator by default
+        appTerminator: AppTerminator? = nil  // Optional, uses real terminator by default
     ) {
         self.appState = appState
         self.processLauncher = processLauncher
         self.systemDialogs = systemDialogs
         self.fileManager = fileManager
+        // If no validator provided, use the real implementation
+        self.configValidator = configValidator ?? RealConfigValidator()
+        // If no terminator provided, use the real implementation
+        self.appTerminator = appTerminator ?? RealAppTerminator()
 
         DebugLog.shared.log("KanataManager initialized")
         DebugLog.shared.log("Binary path: \(Self.kanataBinaryPath)")
@@ -206,7 +218,7 @@ final class KanataManager {
     // -------------------------------------------------------------------------
     // validateConfig() - VALIDATE KANATA CONFIGURATION FILE
     // -------------------------------------------------------------------------
-    // Runs `kanata --check --cfg <config>` to validate the configuration file
+    // Uses the injected ConfigValidator to validate the configuration file
     // before attempting to launch kanata.
     //
     // WHY VALIDATE BEFORE LAUNCHING?
@@ -216,63 +228,15 @@ final class KanataManager {
     // - By validating first (without sudo), we can catch config errors before
     //   the user enters their password
     //
-    // The --check flag tells kanata to parse and validate the config without
-    // actually starting the keyboard remapping daemon.
+    // The validation is delegated to the ConfigValidator protocol, which allows:
+    // - Production: RealConfigValidator runs `kanata --check`
+    // - Testing: MockConfigValidator returns configurable results
     // -------------------------------------------------------------------------
 
-    /// Validates the kanata configuration file using `kanata --check`.
+    /// Validates the kanata configuration file.
     /// - Throws: KanataError.configInvalid if validation fails
     func validateConfig() throws {
-        DebugLog.shared.log("Validating config file...")
-
-        // Build the validation command
-        // --check: Validate config without starting kanata
-        // --cfg: Path to the configuration file
-        let command = "\(Self.kanataBinaryPath) --check --cfg \(Self.kanataConfigPath)"
-        DebugLog.shared.log("Validation command: \(command)")
-
-        // Create a Process to run the validation
-        // Unlike launching kanata itself, validation doesn't need sudo
-        // because it doesn't access the keyboard hardware
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", command]
-
-        // Capture both stdout and stderr
-        // kanata outputs validation errors to stderr
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            // Read output for logging
-            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-            let stdout = String(data: outputData, encoding: .utf8) ?? ""
-            let stderr = String(data: errorData, encoding: .utf8) ?? ""
-
-            // terminationStatus 0 means success
-            if process.terminationStatus == 0 {
-                DebugLog.shared.log("Config validation: OK")
-                return
-            }
-
-            // Validation failed - combine output for error message
-            let errorOutput = stderr.isEmpty ? stdout : stderr
-            DebugLog.shared.log("Config validation failed:\n\(errorOutput)", level: .error)
-            throw KanataError.configInvalid(errorOutput)
-        } catch let error as KanataError {
-            // Re-throw KanataError (our own error from above)
-            throw error
-        } catch {
-            // Other errors (e.g., process launch failure)
-            DebugLog.shared.log("Config validation process error: \(error)", level: .error)
-            throw KanataError.configInvalid("Failed to run validation: \(error.localizedDescription)")
-        }
+        try configValidator.validate(configPath: Self.kanataConfigPath)
     }
 
     // -------------------------------------------------------------------------
@@ -353,7 +317,7 @@ final class KanataManager {
                 switch action {
                 case .quit:
                     // User chose to quit - terminate the application
-                    NSApplication.shared.terminate(nil)
+                    appTerminator.terminate()
                     return
                 case .editConfig:
                     // User chose to edit - TextEdit was opened by the dialog
@@ -437,7 +401,7 @@ final class KanataManager {
         } catch ProcessLaunchError.userCancelled {
             // User clicked Cancel on the password prompt - quit silently
             DebugLog.shared.log("User cancelled sudo prompt")
-            NSApplication.shared.terminate(nil)
+            appTerminator.terminate()
         } catch {
             // Any other launch error
             DebugLog.shared.log("Launch failed with error: \(error)", level: .error)

@@ -67,7 +67,13 @@ final class MockProcessLauncher: ProcessLauncher {
     var launchResult: Result<Int, Error> = .success(12345)
 
     /// Whether isProcessRunning() should return true or false.
+    /// Note: After terminate() succeeds, this is reset to true so that
+    /// a newly launched process can be considered running.
     var isRunning = true
+
+    /// If true, automatically reset isRunning to true after terminate.
+    /// This simulates the scenario where a new process is launched after termination.
+    var autoResetIsRunning = true
 
     // -------------------------------------------------------------------------
     // CALL TRACKING (SPY PATTERN)
@@ -123,9 +129,11 @@ final class MockProcessLauncher: ProcessLauncher {
         terminatedPID = pid
         terminatedSignal = signal
 
-        // If termination "succeeds", also update isRunning to false
-        // to simulate the process actually stopping
-        if terminateResult {
+        // If termination "succeeds" and autoResetIsRunning is false,
+        // set isRunning to false to simulate the process stopping.
+        // If autoResetIsRunning is true (default), keep isRunning = true
+        // so that subsequent process checks (for a new process) succeed.
+        if terminateResult && !autoResetIsRunning {
             isRunning = false
         }
 
@@ -234,6 +242,67 @@ final class MockSystemDialogs: SystemDialogs {
         case .failure(let error):
             throw error
         }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// MockAppTerminator - FAKE APP TERMINATION
+// -----------------------------------------------------------------------------
+// This mock replaces RealAppTerminator for testing. Instead of actually
+// terminating the test process, it just records that termination was requested.
+// -----------------------------------------------------------------------------
+
+@MainActor
+final class MockAppTerminator: AppTerminator {
+    /// Whether terminate() was called
+    var terminateCalled = false
+
+    func terminate() {
+        terminateCalled = true
+        // Don't actually terminate - that would kill the test runner!
+    }
+}
+
+// -----------------------------------------------------------------------------
+// MockConfigValidator - FAKE CONFIG VALIDATION
+// -----------------------------------------------------------------------------
+// This mock replaces RealConfigValidator for testing. Instead of running
+// the actual `kanata --check` command, it returns configurable results.
+//
+// This allows tests to:
+// - Simulate successful validation
+// - Simulate validation failures with specific error messages
+// - Test the config error dialog flow
+// -----------------------------------------------------------------------------
+
+@MainActor
+final class MockConfigValidator: ConfigValidator {
+    // -------------------------------------------------------------------------
+    // CONFIGURABLE BEHAVIOR
+    // -------------------------------------------------------------------------
+
+    /// What validate() should do. Defaults to success (no error).
+    /// Set to an error message to simulate validation failure.
+    var validationError: String?
+
+    /// Whether validate() was called
+    var validateCalled = false
+
+    /// The path passed to validate()
+    var lastValidatedPath: String?
+
+    // -------------------------------------------------------------------------
+    // PROTOCOL IMPLEMENTATION
+    // -------------------------------------------------------------------------
+
+    func validate(configPath: String) throws {
+        validateCalled = true
+        lastValidatedPath = configPath
+
+        if let error = validationError {
+            throw KanataError.configInvalid(error)
+        }
+        // No error means validation passed
     }
 }
 
