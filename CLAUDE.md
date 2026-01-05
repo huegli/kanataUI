@@ -33,7 +33,7 @@ Standard macOS menu bar convention:
   - **Recheck**: Re-run validation after making changes
 
 ### Quitting Behavior
-- When the app quits, it must also terminate the kanata process (via SIGTERM)
+- When the app quits, it must also terminate the kanata process (via SIGKILL)
 
 ## kanata Background Process
 
