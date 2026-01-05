@@ -4,7 +4,7 @@ set -e
 # Build configuration
 APP_NAME="KanataUI"
 BUNDLE_ID="com.nikolai.KanataUI"
-VERSION="1.0.12"
+VERSION="1.0.13"
 BUILD_DIR="Build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 
@@ -69,20 +69,26 @@ codesign --force --deep --sign - "$APP_BUNDLE"
 
 # Remove quarantine attribute from the built app
 # This prevents the "app is damaged" error when copying to another Mac.
-# Note: The quarantine attribute may be re-added during transfer (e.g., AirDrop),
-# so you may need to run xattr -cr on the target Mac as well.
 xattr -cr "$APP_BUNDLE"
+
+# Create a zip archive for distribution to other Macs
+# When extracted with the 'unzip' command (not Archive Utility), the quarantine
+# attribute is not propagated to the extracted contents, avoiding Gatekeeper issues.
+ZIP_FILE="$BUILD_DIR/$APP_NAME.zip"
+rm -f "$ZIP_FILE"
+(cd "$BUILD_DIR" && zip -r -q "$APP_NAME.zip" "$APP_NAME.app")
 
 echo ""
 echo "✓ Built $APP_BUNDLE"
+echo "✓ Created $ZIP_FILE"
 echo ""
 echo "To install locally:"
 echo "  cp -r \"$APP_BUNDLE\" /Applications/"
 echo ""
 echo "To install on another Mac you own:"
-echo "  1. Copy $APP_BUNDLE to the other Mac"
-echo "  2. Run: xattr -cr /path/to/KanataUI.app"
-echo "  3. Move to /Applications/ if desired"
+echo "  1. Copy $ZIP_FILE to the other Mac"
+echo "  2. Extract with: unzip KanataUI.zip -d /Applications/"
+echo "     (Using 'unzip' avoids quarantine; don't double-click the zip)"
 echo ""
 echo "Or open the Build folder:"
 echo "  open $BUILD_DIR"
