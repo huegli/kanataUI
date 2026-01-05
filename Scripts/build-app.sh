@@ -4,7 +4,7 @@ set -e
 # Build configuration
 APP_NAME="KanataUI"
 BUNDLE_ID="com.nikolai.KanataUI"
-VERSION="1.0.11"
+VERSION="1.0.12"
 BUILD_DIR="Build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 
@@ -60,11 +60,29 @@ PLIST
 # Create PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
+# Ad-hoc code signing
+# This creates a valid signature without requiring an Apple Developer certificate.
+# The app will still be blocked by Gatekeeper on other Macs, but combined with
+# removing the quarantine attribute, it allows the app to run on Macs you own.
+echo "Signing $APP_NAME (ad-hoc)..."
+codesign --force --deep --sign - "$APP_BUNDLE"
+
+# Remove quarantine attribute from the built app
+# This prevents the "app is damaged" error when copying to another Mac.
+# Note: The quarantine attribute may be re-added during transfer (e.g., AirDrop),
+# so you may need to run xattr -cr on the target Mac as well.
+xattr -cr "$APP_BUNDLE"
+
 echo ""
 echo "✓ Built $APP_BUNDLE"
 echo ""
-echo "To install, run:"
+echo "To install locally:"
 echo "  cp -r \"$APP_BUNDLE\" /Applications/"
+echo ""
+echo "To install on another Mac you own:"
+echo "  1. Copy $APP_BUNDLE to the other Mac"
+echo "  2. Run: xattr -cr /path/to/KanataUI.app"
+echo "  3. Move to /Applications/ if desired"
 echo ""
 echo "Or open the Build folder:"
 echo "  open $BUILD_DIR"
