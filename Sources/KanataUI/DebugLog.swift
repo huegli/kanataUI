@@ -121,13 +121,17 @@ final class DebugLog {
     // -------------------------------------------------------------------------
     func log(_ message: String, level: Level = .info) {
         // Log to Apple's unified logging system
+        // IMPORTANT: By default, string interpolations in os.log are marked as
+        // <private> to protect sensitive data. We use `privacy: .public` to make
+        // our debug messages visible in Console.app. Only use .public for data
+        // that is safe to expose (no passwords, tokens, or personal information).
         switch level {
         case .info:
-            logger.info("\(message)")
+            logger.info("\(message, privacy: .public)")
         case .warning:
-            logger.warning("\(message)")
+            logger.warning("\(message, privacy: .public)")
         case .error:
-            logger.error("\(message)")
+            logger.error("\(message, privacy: .public)")
         }
 
         // Also print to stdout for development visibility
