@@ -107,6 +107,68 @@ final class RealSystemDialogs: SystemDialogs {
     }
 
     // -------------------------------------------------------------------------
+    // showConfigErrorAlert - DISPLAY CONFIG ERROR WITH MULTIPLE OPTIONS
+    // -------------------------------------------------------------------------
+    // Shows an alert for config validation errors with three options:
+    // - Quit: Exit the application
+    // - Edit Config: Open the config file in TextEdit
+    // - Recheck: Re-run validation
+    //
+    // NSALERT BUTTON ORDERING:
+    // - Buttons are added left-to-right in the order you call addButton()
+    // - The FIRST button added becomes the default (highlighted, Enter key)
+    // - Button responses are: first=1000, second=1001, third=1002, etc.
+    //
+    // We put "Recheck" first (default) since that's likely what users want
+    // after fixing their config.
+    // -------------------------------------------------------------------------
+
+    func showConfigErrorAlert(title: String, message: String, configPath: String) -> ConfigErrorAction {
+        DebugLog.shared.log("Showing config error alert: \(title)", level: .warning)
+
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message + "\n\nYou can edit the config file and recheck, or quit."
+        alert.alertStyle = .warning
+
+        // Add buttons in order: Recheck (default), Edit Config, Quit
+        // NSAlert button responses: 1000 for first button, 1001 for second, etc.
+        alert.addButton(withTitle: "Recheck")       // Response 1000 (default)
+        alert.addButton(withTitle: "Edit Config")   // Response 1001
+        alert.addButton(withTitle: "Quit")          // Response 1002
+
+        let response = alert.runModal()
+
+        // Map the response to our enum
+        switch response {
+        case .alertFirstButtonReturn:  // 1000 - Recheck
+            DebugLog.shared.log("User chose: Recheck")
+            return .recheckConfig
+
+        case .alertSecondButtonReturn: // 1001 - Edit Config
+            DebugLog.shared.log("User chose: Edit Config")
+            // Open the config file in TextEdit
+            // NSWorkspace.shared.open() opens a file with its default app,
+            // but we want to specifically use TextEdit for consistency.
+            // We use open -a TextEdit to force TextEdit.
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = ["-a", "TextEdit", configPath]
+            try? process.run()
+            return .editConfig
+
+        case .alertThirdButtonReturn:  // 1002 - Quit
+            DebugLog.shared.log("User chose: Quit")
+            return .quit
+
+        default:
+            // Should never happen, but default to quit for safety
+            DebugLog.shared.log("Unknown alert response: \(response.rawValue)", level: .warning)
+            return .quit
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // runPrivilegedScript - EXECUTE WITH ADMIN RIGHTS VIA OSASCRIPT
     // -------------------------------------------------------------------------
     // This method:

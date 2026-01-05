@@ -161,11 +161,17 @@ final class MockSystemDialogs: SystemDialogs {
     /// ADDED (v1.0.1): Track non-fatal alerts separately from fatal alerts
     var alertShown = false
 
-    /// The title passed to showFatalAlert() or showAlert()
+    /// Whether showConfigErrorAlert() was called
+    var configErrorAlertShown = false
+
+    /// The title passed to showFatalAlert(), showAlert(), or showConfigErrorAlert()
     var lastAlertTitle: String?
 
-    /// The message passed to showFatalAlert() or showAlert()
+    /// The message passed to showFatalAlert(), showAlert(), or showConfigErrorAlert()
     var lastAlertMessage: String?
+
+    /// The config path passed to showConfigErrorAlert()
+    var lastConfigPath: String?
 
     // -------------------------------------------------------------------------
     // CONFIGURABLE BEHAVIOR
@@ -176,6 +182,10 @@ final class MockSystemDialogs: SystemDialogs {
 
     /// Whether to simulate NSApplication.terminate() - usually false in tests
     var shouldQuitOnFatalAlert = false
+
+    /// What showConfigErrorAlert() should return. Defaults to quit.
+    /// Tests can set this to simulate different user choices.
+    var configErrorAlertResult: ConfigErrorAction = .quit
 
     // -------------------------------------------------------------------------
     // PROTOCOL IMPLEMENTATIONS
@@ -203,6 +213,18 @@ final class MockSystemDialogs: SystemDialogs {
         lastAlertTitle = title
         lastAlertMessage = message
         // Note: Unlike showFatalAlert, this doesn't terminate anything
+    }
+
+    /// Mock implementation of showConfigErrorAlert().
+    ///
+    /// Returns the configurable result without showing any UI.
+    /// Tests can set configErrorAlertResult to simulate different user choices.
+    func showConfigErrorAlert(title: String, message: String, configPath: String) -> ConfigErrorAction {
+        configErrorAlertShown = true
+        lastAlertTitle = title
+        lastAlertMessage = message
+        lastConfigPath = configPath
+        return configErrorAlertResult
     }
 
     func runPrivilegedScript(_ script: String) throws -> String {

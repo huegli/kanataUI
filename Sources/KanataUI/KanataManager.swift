@@ -323,28 +323,56 @@ final class KanataManager {
         }
 
         // ---------------------------------------------------------------------
-        // CONFIG VALIDATION
+        // CONFIG VALIDATION WITH USER OPTIONS
         // ---------------------------------------------------------------------
         // Validate the config file BEFORE prompting for the password.
         // This provides a better user experience - if the config has errors,
         // we catch them before the user enters their password.
+        //
+        // If validation fails, the user gets three options:
+        // - Quit: Exit the application
+        // - Edit Config: Open the config in TextEdit, then show dialog again
+        // - Recheck: Re-run validation (useful after editing externally)
+        //
+        // This loop continues until validation passes or the user quits.
         // ---------------------------------------------------------------------
-        do {
-            try validateConfig()
-        } catch KanataError.configInvalid(let errorOutput) {
-            // Show the validation error to the user
-            // Limit to first 500 characters to avoid overwhelming the alert
-            systemDialogs.showFatalAlert(
-                title: "Config Validation Failed",
-                message: "The kanata configuration file has errors:\n\n\(errorOutput.prefix(500))"
-            )
-            return
-        } catch {
-            systemDialogs.showFatalAlert(
-                title: "Config Validation Error",
-                message: error.localizedDescription
-            )
-            return
+        var validationPassed = false
+        while !validationPassed {
+            do {
+                try validateConfig()
+                validationPassed = true
+            } catch KanataError.configInvalid(let errorOutput) {
+                // Show the validation error with options
+                // Limit to first 500 characters to avoid overwhelming the alert
+                let action = systemDialogs.showConfigErrorAlert(
+                    title: "Config Validation Failed",
+                    message: "The kanata configuration file has errors:\n\n\(String(errorOutput.prefix(500)))",
+                    configPath: Self.kanataConfigPath
+                )
+
+                switch action {
+                case .quit:
+                    // User chose to quit - terminate the application
+                    NSApplication.shared.terminate(nil)
+                    return
+                case .editConfig:
+                    // User chose to edit - TextEdit was opened by the dialog
+                    // Continue the loop to show the dialog again
+                    DebugLog.shared.log("Config opened in TextEdit, waiting for recheck...")
+                    continue
+                case .recheckConfig:
+                    // User chose to recheck - continue the loop
+                    DebugLog.shared.log("Rechecking config...")
+                    continue
+                }
+            } catch {
+                // Unexpected error during validation - show fatal alert
+                systemDialogs.showFatalAlert(
+                    title: "Config Validation Error",
+                    message: error.localizedDescription
+                )
+                return
+            }
         }
 
         // Build the shell script that will run kanata

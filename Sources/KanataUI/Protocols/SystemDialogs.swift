@@ -37,6 +37,25 @@
 import Foundation
 
 // -----------------------------------------------------------------------------
+// CONFIG ERROR ACTION ENUM
+// -----------------------------------------------------------------------------
+// Represents the user's choice when a config validation error occurs.
+// This enum allows the caller to take different actions based on user input.
+// -----------------------------------------------------------------------------
+
+/// Actions the user can take when a configuration error is shown.
+enum ConfigErrorAction {
+    /// User chose to quit the application
+    case quit
+
+    /// User chose to edit the config file in TextEdit
+    case editConfig
+
+    /// User chose to recheck the configuration
+    case recheckConfig
+}
+
+// -----------------------------------------------------------------------------
 // PROTOCOL DEFINITION
 // -----------------------------------------------------------------------------
 
@@ -99,6 +118,29 @@ protocol SystemDialogs {
     /// Unlike showFatalAlert, this method returns after the user dismisses
     /// the alert, allowing the application to continue running.
     func showAlert(title: String, message: String)
+
+    // -------------------------------------------------------------------------
+    // showConfigErrorAlert - DISPLAY CONFIG VALIDATION ERROR WITH OPTIONS
+    // -------------------------------------------------------------------------
+    // Unlike showFatalAlert, this gives the user choices:
+    // - Quit: Exit the application
+    // - Edit Config: Open the config file in TextEdit for editing
+    // - Recheck: Re-run validation (useful after editing externally)
+    //
+    // This provides a better UX for config errors, which are often fixable.
+    // -------------------------------------------------------------------------
+
+    /// Shows a configuration error alert with multiple action options.
+    ///
+    /// - Parameters:
+    ///   - title: The alert's title (e.g., "Config Validation Failed")
+    ///   - message: Detailed error message from kanata --check
+    ///   - configPath: Path to the config file (for the Edit button)
+    /// - Returns: The action the user chose (quit, edit, or recheck)
+    ///
+    /// This method is used for config validation errors, which are recoverable.
+    /// The user can fix the config and try again without restarting the app.
+    func showConfigErrorAlert(title: String, message: String, configPath: String) -> ConfigErrorAction
 
     // -------------------------------------------------------------------------
     // runPrivilegedScript - EXECUTE WITH ADMIN RIGHTS

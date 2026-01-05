@@ -24,7 +24,10 @@ Standard macOS menu bar convention:
 - The app automatically starts kanata on launch after validating the configuration file
 - Config validation uses `kanata --check --cfg <config>` (does not require sudo)
 - If validation passes, the app prompts for password and launches kanata
-- If validation fails, the app shows an error and quits
+- If validation fails, the user can choose to:
+  - **Quit**: Exit the application
+  - **Edit Config**: Open the config file in TextEdit for editing
+  - **Recheck**: Re-run validation after making changes
 
 ### Quitting Behavior
 - When the app quits, it must also terminate the kanata process (via SIGTERM)
@@ -43,7 +46,11 @@ sudo /opt/homebrew/bin/kanata --cfg /Users/nikolai/dotfiles/kanata.kbd
 - Before launching kanata, validate the config file using `kanata --check --cfg <config>`
 - This runs without sudo (no keyboard access needed for validation)
 - Validates config syntax before prompting for password (better UX)
-- If validation fails, show the error output and quit
+- If validation fails, show an alert with three options:
+  - **Recheck** (default): Re-run validation
+  - **Edit Config**: Open config in TextEdit, then show alert again
+  - **Quit**: Exit the application
+- This loop continues until validation passes or user quits
 
 ### Authentication
 - Use `osascript` with `do shell script "..." with administrator privileges` to prompt for sudo password
@@ -53,13 +60,13 @@ sudo /opt/homebrew/bin/kanata --cfg /Users/nikolai/dotfiles/kanata.kbd
 - Note: SIGTERM was found to be ignored by kanata; SIGKILL cannot be caught or ignored
 
 ### Error Handling
-All error conditions are fatal - show alert and quit the application:
+Most error conditions are fatal (show alert and quit). Config validation errors are recoverable.
 
 | Scenario | Behavior |
 |----------|----------|
 | Kanata binary missing | Alert, then quit |
 | Config file missing | Alert, then quit |
-| Config validation fails | Alert with error details, then quit |
+| Config validation fails | Alert with Recheck/Edit/Quit options |
 | Kanata process crashes | Alert, then quit |
 | Launch failure | Alert, then quit |
 | User cancels sudo prompt | Quit silently (no alert) |
@@ -114,7 +121,9 @@ Integration scenarios requiring real system interaction:
 - [ ] Kill kanata process externally → alert shown → app quits
 - [ ] Start with missing kanata binary → alert → app quits
 - [ ] Start with missing config file → alert → app quits
-- [ ] Start with invalid config file → validation error alert → app quits
+- [ ] Invalid config → alert with 3 buttons → click Quit → app quits
+- [ ] Invalid config → click Edit Config → TextEdit opens → alert shown again
+- [ ] Invalid config → fix config externally → click Recheck → validation passes → continues
 - [ ] Quit app while kanata running → kanata process terminated
 
 ## Future Improvements
