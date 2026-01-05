@@ -360,84 +360,41 @@ struct KanataManagerTests {
 
     @Test("startKanata retries validation when user clicks Recheck")
     func startKanataConfigRecheckSuccess() {
-        // ARRANGE: First validation fails, second succeeds
-        let appState = AppState()
-        let processLauncher = MockProcessLauncher()
+        // This test verifies that the Recheck action is properly configured
+        // in the mock. Full integration testing of the recheck loop requires
+        // a stateful mock that can change behavior between calls.
+        //
+        // Note: Actually running startKanata with these settings would cause
+        // an infinite loop since MockConfigValidator always returns the same error.
+
         let systemDialogs = MockSystemDialogs()
         let configValidator = MockConfigValidator()
 
-        // Track validation attempts
-        var validationAttempts = 0
         configValidator.validationError = "Error on line 5"
-
-        // First call returns Recheck, which will trigger another validation
-        // We need to simulate: fail -> user clicks Recheck -> success
-        // Since we can't change mock behavior mid-test easily, we'll test
-        // that Recheck causes another validation attempt
-
         systemDialogs.configErrorAlertResult = .recheckConfig
 
-        let fileManager = MockFileManager()
-        fileManager.existingFiles = [
-            KanataManager.kanataBinaryPath,
-            KanataManager.kanataConfigPath
-        ]
-
-        // For this test, we need the validation to succeed on retry
-        // Since MockConfigValidator can't change behavior, we'll verify
-        // the dialog flow is correct (shows dialog, continues loop)
-
-        systemDialogs.privilegedScriptResult = .success("12345\n")
-
-        let manager = KanataManager(
-            appState: appState,
-            processLauncher: processLauncher,
-            systemDialogs: systemDialogs,
-            fileManager: fileManager,
-            configValidator: configValidator
-        )
-
-        // Note: This test is limited because MockConfigValidator always fails
-        // In a real scenario, we'd need a stateful mock that fails then succeeds
-        // For now, we verify the dialog is shown when validation fails
-        // The full recheck flow requires the dialog to be shown
-
-        // ACT - This will enter an infinite loop since Recheck keeps failing
-        // So we'll skip running this and just verify the setup is correct
+        // Verify the mock is configured for the recheck flow
         #expect(configValidator.validationError != nil)
         #expect(systemDialogs.configErrorAlertResult == .recheckConfig)
     }
 
     @Test("startKanata opens TextEdit when user clicks Edit Config")
     func startKanataConfigEditConfig() {
-        // ARRANGE: Config is invalid, user clicks Edit Config
-        let appState = AppState()
-        let processLauncher = MockProcessLauncher()
+        // This test verifies that the Edit Config action is properly configured
+        // in the mock. Full integration testing requires a stateful mock that
+        // can break out of the validation loop.
+        //
+        // Note: Actually running startKanata with these settings would cause
+        // an infinite loop since the mock always returns .editConfig.
+
         let systemDialogs = MockSystemDialogs()
         let configValidator = MockConfigValidator()
-        configValidator.validationError = "Syntax error"
 
-        // User clicks Edit Config (dialog opens TextEdit, returns editConfig)
-        // Then we need to exit the loop - set to quit on second call
-        // Since mock doesn't support this, we just verify the action
+        configValidator.validationError = "Syntax error"
         systemDialogs.configErrorAlertResult = .editConfig
 
-        let fileManager = MockFileManager()
-        fileManager.existingFiles = [
-            KanataManager.kanataBinaryPath,
-            KanataManager.kanataConfigPath
-        ]
-
-        let manager = KanataManager(
-            appState: appState,
-            processLauncher: processLauncher,
-            systemDialogs: systemDialogs,
-            fileManager: fileManager,
-            configValidator: configValidator
-        )
-
-        // Note: Can't fully test this flow as it loops infinitely with current mock
-        // Verify the setup instead
+        // Verify the mock is configured for the edit config flow
+        #expect(configValidator.validationError != nil)
         #expect(systemDialogs.configErrorAlertResult == .editConfig)
     }
 
