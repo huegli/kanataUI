@@ -56,7 +56,16 @@ sudo /opt/homebrew/bin/kanata --cfg /Users/nikolai/dotfiles/kanata.kbd
 - This loop continues until validation passes or user quits
 
 ### Authentication
-- Use `osascript` with `do shell script "..." with administrator privileges` to prompt for sudo password
+The app uses a hybrid approach for privilege escalation:
+
+1. **Passwordless sudo (preferred)**: First tries `sudo -n` (non-interactive mode)
+   - If the user has configured a sudoers rule, no password prompt is shown
+   - To enable, create `/etc/sudoers.d/kanata` with:
+     ```
+     username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata
+     ```
+
+2. **osascript fallback**: If passwordless sudo fails, falls back to `osascript` with `do shell script "..." with administrator privileges` which prompts for password
 
 ### Process Termination
 - Use SIGKILL for immediate, reliable termination when stopping kanata

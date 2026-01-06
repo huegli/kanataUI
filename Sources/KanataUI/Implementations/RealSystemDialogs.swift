@@ -169,23 +169,120 @@ final class RealSystemDialogs: SystemDialogs {
     }
 
     // -------------------------------------------------------------------------
-    // runPrivilegedScript - EXECUTE WITH ADMIN RIGHTS VIA OSASCRIPT
+    // runPrivilegedScript - EXECUTE WITH ADMIN RIGHTS
     // -------------------------------------------------------------------------
-    // This method:
-    // 1. Escapes the script for AppleScript embedding
-    // 2. Wraps it in `do shell script "..." with administrator privileges`
-    // 3. Runs osascript to execute it
-    // 4. Handles success, failure, and user cancellation
+    // This method attempts to run a script with root privileges using two
+    // approaches in order of preference:
+    //
+    // 1. PASSWORDLESS SUDO (if configured)
+    //    If the user has set up a sudoers rule allowing passwordless execution
+    //    of kanata, we use `sudo -n` (non-interactive mode). This provides a
+    //    seamless experience without password prompts.
+    //
+    //    To enable, add to /etc/sudoers.d/kanata:
+    //      username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata
+    //
+    // 2. OSASCRIPT WITH ADMIN PRIVILEGES (fallback)
+    //    If passwordless sudo isn't available, we fall back to the traditional
+    //    AppleScript approach which prompts the user for their password.
     //
     // SECURITY CONSIDERATIONS:
     // - The script runs as root, so be careful what you execute
-    // - User must explicitly approve via password
-    // - We're not persisting credentials or bypassing the dialog
+    // - Passwordless sudo only works if explicitly configured by the user
+    // - We're not persisting credentials or bypassing security
     // -------------------------------------------------------------------------
 
     func runPrivilegedScript(_ script: String) throws -> String {
         DebugLog.shared.log("Running privileged script: \(script)")
 
+        // First, try passwordless sudo if available
+        if let output = tryPasswordlessSudo(script) {
+            return output
+        }
+
+        // Fall back to osascript with admin privileges
+        DebugLog.shared.log("Passwordless sudo not available, using osascript fallback")
+        return try runWithOsascript(script)
+    }
+
+    // -------------------------------------------------------------------------
+    // tryPasswordlessSudo - ATTEMPT NON-INTERACTIVE SUDO
+    // -------------------------------------------------------------------------
+    // Uses `sudo -n` (non-interactive mode) to run the script. The -n flag
+    // tells sudo to fail immediately if a password is required, rather than
+    // prompting. This allows us to detect if passwordless sudo is configured.
+    //
+    // Returns: The command output if successful, nil if password is required
+    // -------------------------------------------------------------------------
+
+    /// Attempts to run a script with passwordless sudo.
+    /// - Parameter script: The shell script to execute
+    /// - Returns: The script output if successful, nil if password is required
+    private func tryPasswordlessSudo(_ script: String) -> String? {
+        DebugLog.shared.log("Attempting passwordless sudo...")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+
+        // -n = non-interactive (fail if password required)
+        // /bin/bash -c = run the script via bash (handles redirects, pipes, etc.)
+        process.arguments = ["-n", "/bin/bash", "-c", script]
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let outputString = String(data: outputData, encoding: .utf8) ?? ""
+
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+
+            DebugLog.shared.log("sudo -n exit code: \(process.terminationStatus)")
+            DebugLog.shared.log("sudo -n stdout: '\(outputString)'")
+            DebugLog.shared.log("sudo -n stderr: '\(errorOutput)'")
+
+            // Exit code 0 means success
+            if process.terminationStatus == 0 {
+                DebugLog.shared.log("Passwordless sudo succeeded!")
+                return outputString
+            }
+
+            // Exit code 1 with "password is required" means we need to fall back
+            // Other errors might indicate the command itself failed
+            if errorOutput.contains("password is required") || errorOutput.contains("a password is required") {
+                DebugLog.shared.log("Passwordless sudo not configured, will use osascript")
+                return nil
+            }
+
+            // Some other error - log it and fall back to osascript
+            DebugLog.shared.log("sudo -n failed with unexpected error: \(errorOutput)", level: .warning)
+            return nil
+
+        } catch {
+            DebugLog.shared.log("Failed to run sudo -n: \(error)", level: .warning)
+            return nil
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // runWithOsascript - EXECUTE VIA APPLESCRIPT WITH ADMIN PRIVILEGES
+    // -------------------------------------------------------------------------
+    // The traditional approach using osascript and AppleScript's
+    // `with administrator privileges` clause. This prompts the user for
+    // their password via the standard macOS authentication dialog.
+    // -------------------------------------------------------------------------
+
+    /// Runs a script using osascript with administrator privileges.
+    /// - Parameter script: The shell script to execute
+    /// - Returns: The script output
+    /// - Throws: ProcessLaunchError on failure or user cancellation
+    private func runWithOsascript(_ script: String) throws -> String {
         // Escape special characters for embedding in AppleScript string
         // Backslashes and quotes need to be escaped
         let escapedScript = script.replacingOccurrences(of: "\\", with: "\\\\")
