@@ -213,27 +213,30 @@ final class RealProcessLauncher: ProcessLauncher {
     }
 
     // -------------------------------------------------------------------------
-    // PRIVATE HELPER: PASSWORDLESS SUDO KILL
+    // PRIVATE HELPER: PASSWORDLESS SUDO PKILL
     // -------------------------------------------------------------------------
-    // Attempts to kill a root process using `sudo -n kill`.
+    // Attempts to kill kanata using `sudo -n pkill -9 kanata`.
     // The -n flag means non-interactive (no password prompt).
     //
-    // This only works if the user has configured a sudoers rule like:
-    //   username ALL=(ALL) NOPASSWD: /bin/kill
+    // Using pkill instead of kill is MORE SECURE because:
+    // - The sudoers rule can be specific: /usr/bin/pkill -9 kanata
+    // - This only allows killing processes named "kanata", not arbitrary PIDs
+    // - Much safer than allowing passwordless /bin/kill
     //
     // Returns true if the process was killed, false if sudo failed or process
     // is still running.
     // -------------------------------------------------------------------------
 
     private func tryPasswordlessSudoKill(pid: Int, signal: Int32) -> Bool {
-        DebugLog.shared.log("Trying passwordless sudo kill...")
+        DebugLog.shared.log("Trying passwordless sudo pkill...")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        // Use full path /bin/kill to match sudoers rule exactly
-        process.arguments = ["-n", "/bin/kill", "-\(signal)", "\(pid)"]
+        // Use pkill with process name - more secure than kill with PID
+        // Sudoers rule: username ALL=(ALL) NOPASSWD: /usr/bin/pkill -9 kanata
+        process.arguments = ["-n", "/usr/bin/pkill", "-9", "kanata"]
 
-        // Capture output to check for "password required" error
+        // Capture output to check for errors
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
@@ -247,17 +250,17 @@ final class RealProcessLauncher: ProcessLauncher {
             let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
 
             if process.terminationStatus != 0 {
-                DebugLog.shared.log("sudo -n kill failed: status=\(process.terminationStatus), stderr=\(errorOutput.prefix(200))")
+                DebugLog.shared.log("sudo -n pkill failed: status=\(process.terminationStatus), stderr=\(errorOutput.prefix(200))")
                 return false
             }
 
-            DebugLog.shared.log("sudo -n kill succeeded, verifying process stopped...")
+            DebugLog.shared.log("sudo -n pkill succeeded, verifying process stopped...")
 
             // Verify the process actually stopped
             return waitForProcessToStop(pid: pid)
 
         } catch {
-            DebugLog.shared.log("sudo -n kill threw exception: \(error)", level: .error)
+            DebugLog.shared.log("sudo -n pkill threw exception: \(error)", level: .error)
             return false
         }
     }

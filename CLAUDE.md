@@ -23,22 +23,22 @@ sudo visudo -f /etc/sudoers.d/kanata
 
 Add this line (replace `username` with your macOS username):
 ```
-username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata, /bin/kill
+username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata, /usr/bin/pkill -9 kanata
 ```
 
 Save and exit (`:wq` in vi).
 
-**Why both commands?**
+**Why these commands?**
 - `/opt/homebrew/bin/kanata` - for launching kanata with root privileges
-- `/bin/kill` - for stopping the kanata process (which runs as root)
+- `/usr/bin/pkill -9 kanata` - for stopping the kanata process (more secure than `/bin/kill` because it can only kill processes named "kanata", not arbitrary PIDs)
 
 ### 3. Verify Setup
 ```bash
 # Test passwordless kanata launch
 sudo -n /opt/homebrew/bin/kanata --help
 
-# Test passwordless kill (should show usage, not password prompt)
-sudo -n kill --help
+# Test passwordless pkill (should work without password prompt)
+sudo -n /usr/bin/pkill -9 kanata
 
 # Both should work without asking for password
 ```
@@ -46,7 +46,7 @@ sudo -n kill --help
 ### Why These Permissions?
 - **Input Monitoring**: Required for kanata to intercept and remap keyboard events
 - **Passwordless sudo for kanata**: kanata needs root privileges to access raw keyboard input
-- **Passwordless sudo for kill**: Since kanata runs as root, stopping it also requires root privileges
+- **Passwordless sudo for pkill**: Since kanata runs as root, stopping it requires root privileges. Using `pkill -9 kanata` is more secure than allowing `/bin/kill` because it can only terminate processes named "kanata"
 
 ## UI Interface
 Kanata-UI shall be a macOS menu bar application.
@@ -126,8 +126,9 @@ The app uses a hybrid approach for privilege escalation (both launching and term
    - If the user has configured sudoers rules, no password prompt is shown
    - To enable, create `/etc/sudoers.d/kanata` with:
      ```
-     username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata, /bin/kill
+     username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata, /usr/bin/pkill -9 kanata
      ```
+   - Note: `pkill -9 kanata` is more secure than `/bin/kill` because it can only kill processes named "kanata"
 
 2. **osascript fallback**: If passwordless sudo fails, falls back to `osascript` with `do shell script "..." with administrator privileges` which prompts for password
 
