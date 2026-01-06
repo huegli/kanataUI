@@ -15,7 +15,7 @@ KanataUI needs Input Monitoring permission to allow kanata to access keyboard in
 3. Enable the checkbox next to KanataUI
 
 ### 2. Passwordless Sudo (Optional but Recommended)
-To avoid password prompts on launch, relaunch, and quit:
+To avoid password prompts on launch and quit:
 
 ```bash
 sudo visudo -f /etc/sudoers.d/kanata
@@ -63,7 +63,6 @@ Standard macOS menu bar convention:
 ### Context Menu
 - Status indicator (Running/Stopped with PID)
 - Edit Config (safe config editing workflow - see below)
-- Relaunch (stops kanata if running, then restarts with updated config)
 - Settings submenu (system settings, reveal files in Finder)
 - View Debug Log (opens Console.app)
 - Quit option
@@ -215,7 +214,7 @@ KanataManager Tests:
 - stopKanata (terminates process with SIGKILL, updates state)
 - cleanup (stops kanata if running, no-op if not running)
 - Config validation (shows error dialog when invalid, recheck flow, edit config flow)
-- relaunchKanata (stops before restart, starts when not running, handles stop failure)
+- relaunchKanata (internal method used by Edit Config: stops before restart, starts when not running, handles stop failure)
 - Password cancellation (silent quit without error dialog)
 
 ### Manual Testing Checklist
@@ -223,16 +222,15 @@ Integration scenarios requiring real system interaction:
 
 **With passwordless sudo configured:**
 - [ ] App launches → validates config → kanata starts silently (no password prompt) → filled icon
-- [ ] Relaunch → stops current process → validates config → restarts silently
+- [ ] Quit → kanata stops silently (no password prompt)
 
 **Without passwordless sudo (fallback):**
 - [ ] App launches → validates config → prompts for password → kanata starts → filled icon
-- [ ] Relaunch → stops current process → validates config → prompts for password → restarts
+- [ ] Quit → prompts for password → kanata stops
 - [ ] Cancel password prompt on launch → app quits silently
 
 **General:**
-- [ ] Click menu bar icon → shows context menu with status, Edit Config, Relaunch, Settings, Quit
-- [ ] Relaunch with invalid config → shows error dialog with Edit/Recheck/Quit options
+- [ ] Click menu bar icon → shows context menu with status, Edit Config, Settings, Quit
 - [ ] Kill kanata process externally → alert shown → app quits
 - [ ] Start with missing kanata binary → alert → app quits
 - [ ] Start with missing config file → alert → app quits

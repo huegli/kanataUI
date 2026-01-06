@@ -298,7 +298,7 @@ struct MenuContent: View {
     // they may not be available in all execution contexts.
     // -------------------------------------------------------------------------
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.2"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.3"
     }
 
     // -------------------------------------------------------------------------
@@ -358,22 +358,6 @@ struct MenuContent: View {
         // ---------------------------------------------------------------------
         Button("Edit Config") {
             kanataManager?.editConfig()
-        }
-
-        // ---------------------------------------------------------------------
-        // RELAUNCH BUTTON
-        // ---------------------------------------------------------------------
-        // Stops the currently running kanata process and relaunches it.
-        // This is useful after editing the config file - the user can reload
-        // the new configuration without manually stopping and starting.
-        //
-        // The relaunchKanata() method handles:
-        // 1. Stopping the current process (if running)
-        // 2. Re-validating the config (catches any new errors)
-        // 3. Relaunching with the updated config
-        // ---------------------------------------------------------------------
-        Button("Relaunch") {
-            kanataManager?.relaunchKanata()
         }
 
         Divider()
