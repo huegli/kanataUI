@@ -225,6 +225,10 @@ final class RealSystemDialogs: SystemDialogs {
             return nil
         }
 
+        // We'll capture stderr from sudo to detect "password required" errors
+        // while letting the actual process output go to the log file
+        let sudoErrorPipe = Pipe()
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
 
@@ -234,75 +238,33 @@ final class RealSystemDialogs: SystemDialogs {
         sudoArgs.append(contentsOf: arguments)
         process.arguments = sudoArgs
 
-        // Redirect stdout and stderr to the log file
+        // Redirect process stdout to the log file, but capture sudo's stderr
+        // to detect password requirement errors
         process.standardOutput = logFileHandle
-        process.standardError = logFileHandle
+        process.standardError = sudoErrorPipe
 
-        // We need to capture sudo's own errors (like "password required")
-        // So we'll first do a quick test to see if passwordless sudo works
-        let testProcess = Process()
-        testProcess.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        testProcess.arguments = ["-n", "true"]  // Just test if we can run anything
-
-        let errorPipe = Pipe()
-        testProcess.standardOutput = FileHandle.nullDevice
-        testProcess.standardError = errorPipe
-
-        do {
-            try testProcess.run()
-            testProcess.waitUntilExit()
-
-            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
-
-            if testProcess.terminationStatus != 0 {
-                if errorOutput.contains("password") {
-                    DebugLog.shared.log("Passwordless sudo not configured (general check)")
-                    return nil
-                }
-            }
-        } catch {
-            DebugLog.shared.log("Failed to test sudo: \(error)", level: .warning)
-            return nil
-        }
-
-        // Now test specifically for the executable we want to run
-        let specificTestProcess = Process()
-        specificTestProcess.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        specificTestProcess.arguments = ["-n", "-l", executablePath]  // List if we can run this
-
-        let specificErrorPipe = Pipe()
-        specificTestProcess.standardOutput = FileHandle.nullDevice
-        specificTestProcess.standardError = specificErrorPipe
-
-        do {
-            try specificTestProcess.run()
-            specificTestProcess.waitUntilExit()
-
-            let errorData = specificErrorPipe.fileHandleForReading.readDataToEndOfFile()
-            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
-
-            // If we can't run this specific command without password, fall back
-            if specificTestProcess.terminationStatus != 0 || errorOutput.contains("password") {
-                DebugLog.shared.log("Passwordless sudo not configured for \(executablePath)")
-                return nil
-            }
-        } catch {
-            DebugLog.shared.log("Failed to check sudo permissions: \(error)", level: .warning)
-            return nil
-        }
-
-        // Passwordless sudo is available for this executable - launch it!
+        // Just try to launch directly - no preliminary tests needed
+        // The sudoers rule is specific to the executable, so we need to try
+        // running that exact executable to know if it's allowed
         do {
             try process.run()
-            // Don't wait - let it run in the background
 
-            // The PID we get here is sudo's PID, not kanata's
-            // But since sudo runs kanata directly (not via fork), when sudo exits
-            // after launching kanata, the kanata process takes over
-            // We need to wait a moment and find the actual kanata PID
+            // Give it a brief moment to either start or fail with password error
+            Thread.sleep(forTimeInterval: 0.2)
 
-            // Give sudo a moment to launch kanata
+            // Check if sudo complained about needing a password
+            // We read available data without blocking
+            let errorData = sudoErrorPipe.fileHandleForReading.availableData
+            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+
+            if errorOutput.contains("password") || errorOutput.contains("Password") {
+                DebugLog.shared.log("Passwordless sudo requires password, falling back: \(errorOutput)")
+                // Kill the sudo process since it's waiting for password
+                process.terminate()
+                return nil
+            }
+
+            // Wait a bit more for kanata to fully start
             Thread.sleep(forTimeInterval: 0.3)
 
             // Find the kanata process using pgrep
