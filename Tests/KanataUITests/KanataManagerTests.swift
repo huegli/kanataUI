@@ -197,7 +197,8 @@ struct KanataManagerTests {
         let configValidator = MockConfigValidator()  // Defaults to success
 
         // Configure mock to return a PID (simulating successful launch)
-        systemDialogs.privilegedScriptResult = .success("12345\n")
+        // Note: The default is already .success(12345), but explicit is better
+        systemDialogs.launchPrivilegedProcessResult = .success(12345)
 
         let fileManager = MockFileManager()
         fileManager.existingFiles = [
@@ -413,7 +414,7 @@ struct KanataManagerTests {
         let systemDialogs = MockSystemDialogs()
         let configValidator = MockConfigValidator()  // Validation succeeds
         let appTerminator = MockAppTerminator()
-        systemDialogs.privilegedScriptResult = .success("22222\n")
+        systemDialogs.launchPrivilegedProcessResult = .success(22222)
 
         let fileManager = MockFileManager()
         fileManager.existingFiles = [
@@ -450,7 +451,7 @@ struct KanataManagerTests {
         let systemDialogs = MockSystemDialogs()
         let configValidator = MockConfigValidator()
         let appTerminator = MockAppTerminator()
-        systemDialogs.privilegedScriptResult = .success("33333\n")
+        systemDialogs.launchPrivilegedProcessResult = .success(33333)
 
         let fileManager = MockFileManager()
         fileManager.existingFiles = [
@@ -522,7 +523,7 @@ struct KanataManagerTests {
         let appTerminator = MockAppTerminator()
 
         // Simulate user cancelling password dialog
-        systemDialogs.privilegedScriptResult = .failure(ProcessLaunchError.userCancelled)
+        systemDialogs.launchPrivilegedProcessResult = .failure(ProcessLaunchError.userCancelled)
 
         let fileManager = MockFileManager()
         fileManager.existingFiles = [

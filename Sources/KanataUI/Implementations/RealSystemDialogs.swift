@@ -169,6 +169,204 @@ final class RealSystemDialogs: SystemDialogs {
     }
 
     // -------------------------------------------------------------------------
+    // launchPrivilegedProcess - LAUNCH BACKGROUND PROCESS WITH ADMIN RIGHTS
+    // -------------------------------------------------------------------------
+    // This method launches a long-running process (like kanata) with root
+    // privileges and returns its PID immediately without waiting.
+    //
+    // It tries two approaches:
+    // 1. Passwordless sudo: `sudo -n <executable> <args>` - no password prompt
+    // 2. osascript fallback: Shell script with `with administrator privileges`
+    //
+    // For passwordless sudo to work, the sudoers file must allow the specific
+    // executable (e.g., /opt/homebrew/bin/kanata), not just /bin/bash.
+    // -------------------------------------------------------------------------
+
+    func launchPrivilegedProcess(
+        executablePath: String,
+        arguments: [String],
+        logFile: String
+    ) throws -> Int {
+        DebugLog.shared.log("Launching privileged process: \(executablePath) \(arguments.joined(separator: " "))")
+
+        // First, try passwordless sudo (runs the executable directly)
+        if let pid = tryPasswordlessSudoProcess(executablePath: executablePath, arguments: arguments, logFile: logFile) {
+            return pid
+        }
+
+        // Fall back to osascript with admin privileges
+        DebugLog.shared.log("Passwordless sudo not available, using osascript fallback")
+        return try launchWithOsascript(executablePath: executablePath, arguments: arguments, logFile: logFile)
+    }
+
+    // -------------------------------------------------------------------------
+    // tryPasswordlessSudoProcess - LAUNCH DIRECTLY WITH SUDO -n
+    // -------------------------------------------------------------------------
+    // Attempts to launch the process using `sudo -n` (non-interactive).
+    // This runs the executable DIRECTLY (not via bash), which matches
+    // sudoers rules like:
+    //   username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata
+    //
+    // Returns the PID if successful, nil if password is required.
+    // -------------------------------------------------------------------------
+
+    private func tryPasswordlessSudoProcess(
+        executablePath: String,
+        arguments: [String],
+        logFile: String
+    ) -> Int? {
+        DebugLog.shared.log("Attempting passwordless sudo for process launch...")
+
+        // Clear/create the log file first
+        FileManager.default.createFile(atPath: logFile, contents: nil)
+
+        guard let logFileHandle = FileHandle(forWritingAtPath: logFile) else {
+            DebugLog.shared.log("Failed to open log file for writing: \(logFile)", level: .warning)
+            return nil
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+
+        // Build arguments: -n (non-interactive) + executable + its arguments
+        // This runs: sudo -n /opt/homebrew/bin/kanata --cfg <config>
+        var sudoArgs = ["-n", executablePath]
+        sudoArgs.append(contentsOf: arguments)
+        process.arguments = sudoArgs
+
+        // Redirect stdout and stderr to the log file
+        process.standardOutput = logFileHandle
+        process.standardError = logFileHandle
+
+        // We need to capture sudo's own errors (like "password required")
+        // So we'll first do a quick test to see if passwordless sudo works
+        let testProcess = Process()
+        testProcess.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        testProcess.arguments = ["-n", "true"]  // Just test if we can run anything
+
+        let errorPipe = Pipe()
+        testProcess.standardOutput = FileHandle.nullDevice
+        testProcess.standardError = errorPipe
+
+        do {
+            try testProcess.run()
+            testProcess.waitUntilExit()
+
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+
+            if testProcess.terminationStatus != 0 {
+                if errorOutput.contains("password") {
+                    DebugLog.shared.log("Passwordless sudo not configured (general check)")
+                    return nil
+                }
+            }
+        } catch {
+            DebugLog.shared.log("Failed to test sudo: \(error)", level: .warning)
+            return nil
+        }
+
+        // Now test specifically for the executable we want to run
+        let specificTestProcess = Process()
+        specificTestProcess.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        specificTestProcess.arguments = ["-n", "-l", executablePath]  // List if we can run this
+
+        let specificErrorPipe = Pipe()
+        specificTestProcess.standardOutput = FileHandle.nullDevice
+        specificTestProcess.standardError = specificErrorPipe
+
+        do {
+            try specificTestProcess.run()
+            specificTestProcess.waitUntilExit()
+
+            let errorData = specificErrorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+
+            // If we can't run this specific command without password, fall back
+            if specificTestProcess.terminationStatus != 0 || errorOutput.contains("password") {
+                DebugLog.shared.log("Passwordless sudo not configured for \(executablePath)")
+                return nil
+            }
+        } catch {
+            DebugLog.shared.log("Failed to check sudo permissions: \(error)", level: .warning)
+            return nil
+        }
+
+        // Passwordless sudo is available for this executable - launch it!
+        do {
+            try process.run()
+            // Don't wait - let it run in the background
+
+            // The PID we get here is sudo's PID, not kanata's
+            // But since sudo runs kanata directly (not via fork), when sudo exits
+            // after launching kanata, the kanata process takes over
+            // We need to wait a moment and find the actual kanata PID
+
+            // Give sudo a moment to launch kanata
+            Thread.sleep(forTimeInterval: 0.3)
+
+            // Find the kanata process using pgrep
+            let pgrepProcess = Process()
+            pgrepProcess.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+            pgrepProcess.arguments = ["-f", executablePath]
+
+            let outputPipe = Pipe()
+            pgrepProcess.standardOutput = outputPipe
+            pgrepProcess.standardError = FileHandle.nullDevice
+
+            try pgrepProcess.run()
+            pgrepProcess.waitUntilExit()
+
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let outputString = String(data: outputData, encoding: .utf8) ?? ""
+
+            // pgrep returns one PID per line, get the first one
+            let pids = outputString.trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: .newlines)
+                .compactMap { Int($0) }
+
+            if let pid = pids.first {
+                DebugLog.shared.log("Passwordless sudo succeeded! Kanata PID: \(pid)")
+                return pid
+            } else {
+                DebugLog.shared.log("Failed to find kanata PID after launch", level: .warning)
+                return nil
+            }
+
+        } catch {
+            DebugLog.shared.log("Failed to launch with passwordless sudo: \(error)", level: .warning)
+            return nil
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // launchWithOsascript - LAUNCH VIA OSASCRIPT WITH PASSWORD PROMPT
+    // -------------------------------------------------------------------------
+    // Fallback method that uses osascript with administrator privileges.
+    // This prompts the user for their password.
+    // -------------------------------------------------------------------------
+
+    private func launchWithOsascript(
+        executablePath: String,
+        arguments: [String],
+        logFile: String
+    ) throws -> Int {
+        // Build the shell command with proper escaping
+        let argsString = arguments.map { "\"\($0)\"" }.joined(separator: " ")
+        let script = "\(executablePath) \(argsString) > \(logFile) 2>&1 & echo $!"
+
+        let output = try runWithOsascript(script)
+
+        // Parse the PID from the output
+        let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let pid = Int(trimmedOutput) else {
+            throw ProcessLaunchError.launchFailed("Failed to parse PID from output: '\(trimmedOutput)'")
+        }
+
+        return pid
+    }
+
+    // -------------------------------------------------------------------------
     // runPrivilegedScript - EXECUTE WITH ADMIN RIGHTS
     // -------------------------------------------------------------------------
     // This method attempts to run a script with root privileges using two

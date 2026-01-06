@@ -175,4 +175,34 @@ protocol SystemDialogs {
     /// Example script: "/usr/bin/some-command --flag"
     /// This will prompt: "[App] wants to make changes. Enter your password."
     func runPrivilegedScript(_ script: String) throws -> String
+
+    // -------------------------------------------------------------------------
+    // launchPrivilegedProcess - LAUNCH A BACKGROUND PROCESS WITH ADMIN RIGHTS
+    // -------------------------------------------------------------------------
+    // Unlike runPrivilegedScript which runs a shell script and waits for output,
+    // this method launches a long-running process in the background and returns
+    // its PID immediately.
+    //
+    // This is specifically designed for launching kanata, which needs to:
+    // 1. Run with root privileges
+    // 2. Continue running in the background
+    // 3. Have its output redirected to a log file
+    //
+    // The method tries passwordless sudo first (if configured in sudoers),
+    // then falls back to osascript with password prompt.
+    // -------------------------------------------------------------------------
+
+    /// Launches a privileged process in the background.
+    ///
+    /// - Parameters:
+    ///   - executablePath: Path to the executable to run
+    ///   - arguments: Arguments to pass to the executable
+    ///   - logFile: Path to redirect stdout/stderr to
+    /// - Returns: The PID of the launched process
+    /// - Throws: ProcessLaunchError on failure or user cancellation
+    func launchPrivilegedProcess(
+        executablePath: String,
+        arguments: [String],
+        logFile: String
+    ) throws -> Int
 }

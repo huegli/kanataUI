@@ -339,36 +339,23 @@ final class KanataManager {
             }
         }
 
-        // Build the shell script that will run kanata
-        // The script:
-        // 1. Runs kanata with the config file
-        // 2. Redirects stdout/stderr to a log file (> file 2>&1)
-        // 3. Runs in background (&)
-        // 4. Echoes the PID so we can capture it ($!)
-        let script = "\(Self.kanataBinaryPath) --cfg \(Self.kanataConfigPath) > \(Self.logFilePath) 2>&1 & echo $!"
-
-        DebugLog.shared.log("Launch script: \(script)")
+        // Launch kanata using the privileged process launcher
+        // This method:
+        // 1. Tries passwordless sudo first (if configured in sudoers)
+        // 2. Falls back to osascript with password prompt
+        // 3. Handles output redirection to the log file
+        // 4. Returns the PID of the launched process
+        DebugLog.shared.log("Launching kanata with config: \(Self.kanataConfigPath)")
 
         do {
-            // Run with admin privileges (will prompt for password)
-            let output = try systemDialogs.runPrivilegedScript(script)
-            DebugLog.shared.log("Script returned: '\(output)'")
+            // Launch kanata with admin privileges
+            let pid = try systemDialogs.launchPrivilegedProcess(
+                executablePath: Self.kanataBinaryPath,
+                arguments: ["--cfg", Self.kanataConfigPath],
+                logFile: Self.logFilePath
+            )
 
-            // Parse the PID from the script output
-            let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            DebugLog.shared.log("Trimmed output: '\(trimmedOutput)'")
-
-            // Int(string) returns Optional<Int> - nil if parsing fails
-            guard let pid = Int(trimmedOutput) else {
-                DebugLog.shared.log("Failed to parse PID from: '\(trimmedOutput)'", level: .error)
-                systemDialogs.showFatalAlert(
-                    title: "Launch Failed",
-                    message: "Failed to parse process ID from kanata launch.\nOutput was: '\(trimmedOutput)'"
-                )
-                return
-            }
-
-            DebugLog.shared.log("Parsed PID: \(pid)")
+            DebugLog.shared.log("Kanata launched with PID: \(pid)")
 
             // Verify the process is actually running
             // (it might have exited immediately due to a config error)

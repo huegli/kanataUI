@@ -188,6 +188,9 @@ final class MockSystemDialogs: SystemDialogs {
     /// What runPrivilegedScript() should return
     var privilegedScriptResult: Result<String, Error> = .success("12345")
 
+    /// What launchPrivilegedProcess() should return (PID or error)
+    var launchPrivilegedProcessResult: Result<Int, Error> = .success(12345)
+
     /// Whether to simulate NSApplication.terminate() - usually false in tests
     var shouldQuitOnFatalAlert = false
 
@@ -239,6 +242,23 @@ final class MockSystemDialogs: SystemDialogs {
         switch privilegedScriptResult {
         case .success(let output):
             return output
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    /// Mock implementation of launchPrivilegedProcess().
+    ///
+    /// Returns a configurable PID or throws an error based on launchPrivilegedProcessResult.
+    /// Tests can configure this to simulate successful launch or various failure modes.
+    func launchPrivilegedProcess(
+        executablePath: String,
+        arguments: [String],
+        logFile: String
+    ) throws -> Int {
+        switch launchPrivilegedProcessResult {
+        case .success(let pid):
+            return pid
         case .failure(let error):
             throw error
         }
