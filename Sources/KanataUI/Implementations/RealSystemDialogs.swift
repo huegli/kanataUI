@@ -169,6 +169,49 @@ final class RealSystemDialogs: SystemDialogs {
     }
 
     // -------------------------------------------------------------------------
+    // showEditConfigErrorAlert - EDITED CONFIG HAS VALIDATION ERRORS
+    // -------------------------------------------------------------------------
+    // Shows an alert when the user's edited config fails validation.
+    // Offers two choices:
+    // - Re-edit: Go back to TextEdit and fix the errors
+    // - Revert: Discard changes and keep the original config
+    //
+    // BUTTON ORDERING:
+    // - Re-edit is first (default) since users likely want to fix their changes
+    // - Revert is second for discarding changes
+    // -------------------------------------------------------------------------
+
+    func showEditConfigErrorAlert(title: String, message: String) -> EditConfigErrorAction {
+        DebugLog.shared.log("Showing edit config error alert: \(title)", level: .warning)
+
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message + "\n\nYou can re-edit the file to fix the errors, or revert to the original configuration."
+        alert.alertStyle = .warning
+
+        // Add buttons: Re-edit (default), Revert
+        alert.addButton(withTitle: "Re-edit")   // Response 1000 (default)
+        alert.addButton(withTitle: "Revert")    // Response 1001
+
+        let response = alert.runModal()
+
+        switch response {
+        case .alertFirstButtonReturn:  // 1000 - Re-edit
+            DebugLog.shared.log("User chose: Re-edit")
+            return .reEdit
+
+        case .alertSecondButtonReturn: // 1001 - Revert
+            DebugLog.shared.log("User chose: Revert")
+            return .revert
+
+        default:
+            // Should never happen, but default to revert for safety
+            DebugLog.shared.log("Unknown alert response: \(response.rawValue)", level: .warning)
+            return .revert
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // launchPrivilegedProcess - LAUNCH BACKGROUND PROCESS WITH ADMIN RIGHTS
     // -------------------------------------------------------------------------
     // This method launches a long-running process (like kanata) with root

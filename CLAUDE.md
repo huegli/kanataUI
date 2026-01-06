@@ -54,11 +54,27 @@ Standard macOS menu bar convention:
 
 ### Context Menu
 - Status indicator (Running/Stopped with PID)
-- Edit Config (opens config file in TextEdit)
+- Edit Config (safe config editing workflow - see below)
 - Relaunch (stops kanata if running, then restarts with updated config)
 - Settings submenu (system settings, reveal files in Finder)
 - View Debug Log (opens Console.app)
 - Quit option
+
+### Edit Config Workflow
+The Edit Config menu option provides a safe editing workflow that protects the original config until changes are validated:
+
+1. Creates a temporary copy of the current config file
+2. Opens TextEdit with the temporary copy
+3. Waits for the user to close TextEdit
+4. Validates the edited config using `kanata --check`
+5. If validation passes:
+   - Copies the edited config back to the original location
+   - Automatically relaunches kanata with the new config
+6. If validation fails:
+   - Shows an alert with two options:
+     - **Re-edit**: Opens TextEdit again with the temp file to fix errors
+     - **Revert**: Discards changes and keeps the original config
+   - This loop continues until validation passes or user chooses Revert
 
 ### Initial State
 - The app automatically starts kanata on launch after validating the configuration file
@@ -161,6 +177,7 @@ protocol SystemDialogs {
     func showFatalAlert(title: String, message: String)
     func showAlert(title: String, message: String)
     func showConfigErrorAlert(title: String, message: String, configPath: String) -> ConfigErrorAction
+    func showEditConfigErrorAlert(title: String, message: String) -> EditConfigErrorAction
     func runPrivilegedScript(_ script: String) throws -> String
 }
 
@@ -206,16 +223,22 @@ Integration scenarios requiring real system interaction:
 
 **General:**
 - [ ] Click menu bar icon → shows context menu with status, Edit Config, Relaunch, Settings, Quit
-- [ ] Edit Config → TextEdit opens with config file
 - [ ] Relaunch with invalid config → shows error dialog with Edit/Recheck/Quit options
 - [ ] Kill kanata process externally → alert shown → app quits
 - [ ] Start with missing kanata binary → alert → app quits
 - [ ] Start with missing config file → alert → app quits
 - [ ] Invalid config on launch → alert with 3 buttons → click Quit → app quits
-- [ ] Invalid config → click Edit Config → TextEdit opens → alert shown again
-- [ ] Invalid config → fix config externally → click Recheck → validation passes → continues
+- [ ] Invalid config on launch → click Edit Config → TextEdit opens → alert shown again
+- [ ] Invalid config on launch → fix config externally → click Recheck → validation passes → continues
 - [ ] Quit app while kanata running → kanata process terminated
 - [ ] Missing Input Monitoring permission → IOHIDDeviceOpen error detected → alert with instructions → app quits
+
+**Edit Config Workflow:**
+- [ ] Edit Config → creates temp copy → TextEdit opens with temp file
+- [ ] Close TextEdit with valid changes → config saved → kanata relaunched
+- [ ] Close TextEdit with invalid changes → error alert with Re-edit/Revert options
+- [ ] Click Re-edit → TextEdit opens again with temp file
+- [ ] Click Revert → original config preserved → alert dismissed
 
 ## Future Improvements
 

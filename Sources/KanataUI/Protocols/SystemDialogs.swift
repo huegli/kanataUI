@@ -56,6 +56,23 @@ enum ConfigErrorAction {
 }
 
 // -----------------------------------------------------------------------------
+// EDIT CONFIG ERROR ACTION ENUM
+// -----------------------------------------------------------------------------
+// Represents the user's choice when an edited config has validation errors.
+// This is used after the user edits a temp copy of the config and it fails
+// validation - they can either re-edit or revert to the original.
+// -----------------------------------------------------------------------------
+
+/// Actions the user can take when an edited config has validation errors.
+enum EditConfigErrorAction {
+    /// User chose to re-edit the config file
+    case reEdit
+
+    /// User chose to revert to the original config (discard changes)
+    case revert
+}
+
+// -----------------------------------------------------------------------------
 // PROTOCOL DEFINITION
 // -----------------------------------------------------------------------------
 
@@ -141,6 +158,23 @@ protocol SystemDialogs {
     /// This method is used for config validation errors, which are recoverable.
     /// The user can fix the config and try again without restarting the app.
     func showConfigErrorAlert(title: String, message: String, configPath: String) -> ConfigErrorAction
+
+    // -------------------------------------------------------------------------
+    // showEditConfigErrorAlert - EDITED CONFIG HAS VALIDATION ERRORS
+    // -------------------------------------------------------------------------
+    // When the user edits a config file (via Edit Config menu) and the edited
+    // version has validation errors, this alert gives them two choices:
+    // - Re-edit: Open TextEdit again to fix the errors
+    // - Revert: Discard changes and keep the original config
+    // -------------------------------------------------------------------------
+
+    /// Shows an alert when an edited config file has validation errors.
+    ///
+    /// - Parameters:
+    ///   - title: The alert's title (e.g., "Config Validation Failed")
+    ///   - message: Detailed error message from kanata --check
+    /// - Returns: The action the user chose (re-edit or revert)
+    func showEditConfigErrorAlert(title: String, message: String) -> EditConfigErrorAction
 
     // -------------------------------------------------------------------------
     // runPrivilegedScript - EXECUTE WITH ADMIN RIGHTS

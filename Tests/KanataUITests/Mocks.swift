@@ -198,6 +198,12 @@ final class MockSystemDialogs: SystemDialogs {
     /// Tests can set this to simulate different user choices.
     var configErrorAlertResult: ConfigErrorAction = .quit
 
+    /// What showEditConfigErrorAlert() should return. Defaults to revert.
+    var editConfigErrorAlertResult: EditConfigErrorAction = .revert
+
+    /// Whether showEditConfigErrorAlert() was called
+    var editConfigErrorAlertShown = false
+
     // -------------------------------------------------------------------------
     // PROTOCOL IMPLEMENTATIONS
     // -------------------------------------------------------------------------
@@ -236,6 +242,17 @@ final class MockSystemDialogs: SystemDialogs {
         lastAlertMessage = message
         lastConfigPath = configPath
         return configErrorAlertResult
+    }
+
+    /// Mock implementation of showEditConfigErrorAlert().
+    ///
+    /// Returns a configurable result without showing any UI.
+    /// Tests can set editConfigErrorAlertResult to simulate different user choices.
+    func showEditConfigErrorAlert(title: String, message: String) -> EditConfigErrorAction {
+        editConfigErrorAlertShown = true
+        lastAlertTitle = title
+        lastAlertMessage = message
+        return editConfigErrorAlertResult
     }
 
     func runPrivilegedScript(_ script: String) throws -> String {

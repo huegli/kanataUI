@@ -298,7 +298,7 @@ struct MenuContent: View {
     // they may not be available in all execution contexts.
     // -------------------------------------------------------------------------
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.9"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.11"
     }
 
     // -------------------------------------------------------------------------
@@ -345,18 +345,19 @@ struct MenuContent: View {
         // ---------------------------------------------------------------------
         // EDIT CONFIG BUTTON
         // ---------------------------------------------------------------------
-        // Opens the kanata configuration file in TextEdit for editing.
-        // Uses the same approach as the config error dialog - launch TextEdit
-        // via the `open -a TextEdit` command.
+        // Opens a safe config editing workflow:
+        // 1. Creates a temporary copy of the config file
+        // 2. Opens TextEdit with the temporary copy
+        // 3. Waits for TextEdit to close
+        // 4. Validates the edited config
+        // 5. If valid: saves to original location and restarts kanata
+        // 6. If invalid: shows alert with re-edit/revert options
         //
-        // This allows users to quickly edit their config without navigating
-        // to the file manually.
+        // This approach protects the original config until the new version
+        // is validated successfully.
         // ---------------------------------------------------------------------
         Button("Edit Config") {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            process.arguments = ["-a", "TextEdit", KanataManager.kanataConfigPath]
-            try? process.run()
+            kanataManager?.editConfig()
         }
 
         // ---------------------------------------------------------------------

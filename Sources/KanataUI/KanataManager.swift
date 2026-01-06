@@ -526,6 +526,191 @@ final class KanataManager {
     }
 
     // -------------------------------------------------------------------------
+    // editConfig() - EDIT CONFIGURATION WITH VALIDATION
+    // -------------------------------------------------------------------------
+    // Provides a safe workflow for editing the kanata configuration:
+    //
+    // 1. Create a temporary copy of the config file
+    // 2. Open TextEdit with the temporary copy
+    // 3. Wait for TextEdit to close
+    // 4. Validate the edited config
+    // 5. If valid: copy to original location and restart kanata
+    // 6. If invalid: show alert with re-edit/revert options
+    //
+    // This approach ensures the original config is preserved until the new
+    // version is validated successfully, preventing accidental corruption.
+    //
+    // WHY WAIT FOR TEXTEDIT?
+    // NSWorkspace.open() launches TextEdit but returns immediately. To wait
+    // for the user to finish editing, we use a NSRunningApplication observer
+    // that monitors when TextEdit terminates.
+    // -------------------------------------------------------------------------
+
+    /// Opens the config file for editing in TextEdit with validation on close.
+    func editConfig() {
+        DebugLog.shared.log("=== Edit Config ===")
+
+        // Create a temporary copy of the config file
+        let originalPath = Self.kanataConfigPath
+        let tempPath = NSTemporaryDirectory() + "kanata-temp.kbd"
+
+        DebugLog.shared.log("Original config: \(originalPath)")
+        DebugLog.shared.log("Temp config: \(tempPath)")
+
+        // Copy the original config to the temp location
+        do {
+            // Remove existing temp file if present
+            try? FileManager.default.removeItem(atPath: tempPath)
+            try FileManager.default.copyItem(atPath: originalPath, toPath: tempPath)
+            DebugLog.shared.log("Created temp copy of config")
+        } catch {
+            DebugLog.shared.log("Failed to create temp copy: \(error)", level: .error)
+            systemDialogs.showAlert(
+                title: "Edit Config Failed",
+                message: "Could not create a temporary copy of the config file.\n\nError: \(error.localizedDescription)"
+            )
+            return
+        }
+
+        // Start the edit-validate-save loop
+        editConfigLoop(tempPath: tempPath, originalPath: originalPath)
+    }
+
+    /// The edit-validate-save loop for config editing.
+    /// Opens TextEdit, waits for close, validates, and either saves or prompts for re-edit.
+    private func editConfigLoop(tempPath: String, originalPath: String) {
+        // Open TextEdit with the temp file
+        DebugLog.shared.log("Opening TextEdit with temp config...")
+
+        let textEditURL = URL(fileURLWithPath: "/System/Applications/TextEdit.app")
+        let fileURL = URL(fileURLWithPath: tempPath)
+
+        // Use NSWorkspace to open the file with TextEdit and get the running app
+        let configuration = NSWorkspace.OpenConfiguration()
+
+        NSWorkspace.shared.open([fileURL], withApplicationAt: textEditURL, configuration: configuration) { [weak self] app, error in
+            // This completion handler runs on a background thread, so we need to
+            // dispatch all UI and @MainActor work back to the main actor.
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+
+                if let error = error {
+                    DebugLog.shared.log("Failed to open TextEdit: \(error)", level: .error)
+                    self.systemDialogs.showAlert(
+                        title: "Edit Config Failed",
+                        message: "Could not open TextEdit.\n\nError: \(error.localizedDescription)"
+                    )
+                    return
+                }
+
+                guard let app = app else {
+                    DebugLog.shared.log("TextEdit app reference is nil", level: .error)
+                    return
+                }
+
+                DebugLog.shared.log("TextEdit launched with PID: \(app.processIdentifier)")
+
+                // Wait for TextEdit to close
+                self.waitForAppToClose(app: app) {
+                    self.handleTextEditClosed(tempPath: tempPath, originalPath: originalPath)
+                }
+            }
+        }
+    }
+
+    /// Waits for the given application to terminate, then calls the completion handler.
+    ///
+    /// The completion handler is marked @MainActor @Sendable to ensure it runs on the
+    /// main thread (required for UI work) and satisfies Swift's strict concurrency checking.
+    private func waitForAppToClose(app: NSRunningApplication, completion: @escaping @MainActor @Sendable () -> Void) {
+        DebugLog.shared.log("Waiting for TextEdit to close...")
+
+        // Use a timer to poll the app's termination status
+        // This is simpler than using NSWorkspace notifications
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+            if app.isTerminated {
+                // Timer callback runs on main thread, but we need to dispatch to MainActor
+                // to satisfy strict concurrency. Task ensures proper actor isolation.
+                Task { @MainActor in
+                    DebugLog.shared.log("TextEdit has closed")
+                    completion()
+                }
+                timer.invalidate()
+            }
+        }
+    }
+
+    /// Called when TextEdit closes - validates the edited config and takes action.
+    private func handleTextEditClosed(tempPath: String, originalPath: String) {
+        DebugLog.shared.log("Validating edited config...")
+
+        // Validate the edited config using the temp file path
+        do {
+            try configValidator.validate(configPath: tempPath)
+            DebugLog.shared.log("Edited config is valid!")
+
+            // Copy the validated config back to the original location
+            do {
+                try FileManager.default.removeItem(atPath: originalPath)
+                try FileManager.default.copyItem(atPath: tempPath, toPath: originalPath)
+                DebugLog.shared.log("Config saved successfully")
+
+                // Clean up temp file
+                try? FileManager.default.removeItem(atPath: tempPath)
+
+                // Restart kanata with the new config
+                DebugLog.shared.log("Restarting kanata with new config...")
+                relaunchKanata()
+
+            } catch {
+                DebugLog.shared.log("Failed to save config: \(error)", level: .error)
+                systemDialogs.showAlert(
+                    title: "Save Failed",
+                    message: "Could not save the config file.\n\nError: \(error.localizedDescription)\n\nYour changes are in: \(tempPath)"
+                )
+            }
+
+        } catch let error as KanataError {
+            // Validation failed - show error with re-edit/revert options
+            DebugLog.shared.log("Edited config validation failed: \(error)", level: .warning)
+
+            let errorMessage: String
+            switch error {
+            case .configInvalid(let details):
+                errorMessage = details
+            default:
+                errorMessage = error.localizedDescription
+            }
+
+            let action = systemDialogs.showEditConfigErrorAlert(
+                title: "Config Validation Failed",
+                message: errorMessage
+            )
+
+            switch action {
+            case .reEdit:
+                // Re-open TextEdit with the temp file
+                DebugLog.shared.log("User chose to re-edit")
+                editConfigLoop(tempPath: tempPath, originalPath: originalPath)
+
+            case .revert:
+                // Discard changes and clean up temp file
+                DebugLog.shared.log("User chose to revert")
+                try? FileManager.default.removeItem(atPath: tempPath)
+            }
+
+        } catch {
+            // Unexpected error during validation
+            DebugLog.shared.log("Unexpected validation error: \(error)", level: .error)
+            systemDialogs.showAlert(
+                title: "Validation Error",
+                message: "An unexpected error occurred during validation.\n\nError: \(error.localizedDescription)"
+            )
+            try? FileManager.default.removeItem(atPath: tempPath)
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // cleanup() - APP TERMINATION CLEANUP
     // -------------------------------------------------------------------------
     // Called when the app is terminating to ensure the kanata process is stopped.
