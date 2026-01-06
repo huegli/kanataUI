@@ -15,7 +15,7 @@ KanataUI needs Input Monitoring permission to allow kanata to access keyboard in
 3. Enable the checkbox next to KanataUI
 
 ### 2. Passwordless Sudo (Optional but Recommended)
-To avoid password prompts on every launch/relaunch:
+To avoid password prompts on launch, relaunch, and quit:
 
 ```bash
 sudo visudo -f /etc/sudoers.d/kanata
@@ -23,22 +23,30 @@ sudo visudo -f /etc/sudoers.d/kanata
 
 Add this line (replace `username` with your macOS username):
 ```
-username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata
+username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata, /bin/kill
 ```
 
 Save and exit (`:wq` in vi).
 
+**Why both commands?**
+- `/opt/homebrew/bin/kanata` - for launching kanata with root privileges
+- `/bin/kill` - for stopping the kanata process (which runs as root)
+
 ### 3. Verify Setup
 ```bash
-# Test passwordless sudo works
+# Test passwordless kanata launch
 sudo -n /opt/homebrew/bin/kanata --help
 
-# Should show help text without asking for password
+# Test passwordless kill (should show usage, not password prompt)
+sudo -n kill --help
+
+# Both should work without asking for password
 ```
 
 ### Why These Permissions?
 - **Input Monitoring**: Required for kanata to intercept and remap keyboard events
-- **Passwordless sudo**: kanata needs root privileges to access raw keyboard input; the sudoers rule allows this without interactive password prompts
+- **Passwordless sudo for kanata**: kanata needs root privileges to access raw keyboard input
+- **Passwordless sudo for kill**: Since kanata runs as root, stopping it also requires root privileges
 
 ## UI Interface
 Kanata-UI shall be a macOS menu bar application.
@@ -112,13 +120,13 @@ sudo /opt/homebrew/bin/kanata --cfg /Users/nikolai/dotfiles/kanata.kbd
 - This loop continues until validation passes or user quits
 
 ### Authentication
-The app uses a hybrid approach for privilege escalation:
+The app uses a hybrid approach for privilege escalation (both launching and terminating kanata):
 
 1. **Passwordless sudo (preferred)**: First tries `sudo -n` (non-interactive mode)
-   - If the user has configured a sudoers rule, no password prompt is shown
+   - If the user has configured sudoers rules, no password prompt is shown
    - To enable, create `/etc/sudoers.d/kanata` with:
      ```
-     username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata
+     username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata, /bin/kill
      ```
 
 2. **osascript fallback**: If passwordless sudo fails, falls back to `osascript` with `do shell script "..." with administrator privileges` which prompts for password

@@ -298,7 +298,7 @@ struct MenuContent: View {
     // they may not be available in all execution contexts.
     // -------------------------------------------------------------------------
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.11"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.12"
     }
 
     // -------------------------------------------------------------------------

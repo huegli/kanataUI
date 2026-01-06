@@ -161,76 +161,16 @@ final class RealProcessLauncher: ProcessLauncher {
         // EPERM (1) means "Operation not permitted"
         // This happens when we try to signal a root-owned process as non-root
         if errnoValue == EPERM {
-            DebugLog.shared.log("Process is root-owned, using sudo kill")
+            DebugLog.shared.log("Process is root-owned, trying passwordless sudo kill first")
 
-            do {
-                // Build a kill command
-                let script = "kill -\(signal) \(pid)"
-
-                // Wrap it in AppleScript for admin privileges
-                // This will prompt the user for their password
-                let appleScript = "do shell script \"\(script)\" with administrator privileges"
-
-                // Run osascript to execute the AppleScript
-                // /usr/bin/osascript is macOS's AppleScript interpreter
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-                process.arguments = ["-e", appleScript]
-
-                // Capture stderr to detect user cancellation
-                // User cancellation produces AppleScript error -128
-                let errorPipe = Pipe()
-                process.standardOutput = FileHandle.nullDevice
-                process.standardError = errorPipe
-
-                try process.run()
-                process.waitUntilExit()
-
-                // Check for user cancellation (AppleScript error -128)
-                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
-
-                if process.terminationStatus != 0 {
-                    DebugLog.shared.log("sudo kill failed with status: \(process.terminationStatus), stderr: \(errorOutput)", level: .error)
-
-                    // Check if user cancelled the password prompt
-                    if errorOutput.contains("-128") {
-                        DebugLog.shared.log("User cancelled password prompt for kill")
-                    }
-                    return false
-                }
-
-                DebugLog.shared.log("sudo kill completed successfully")
-
-                // Verify the process actually stopped.
-                // SIGTERM is a "graceful termination" request - the process may need
-                // time to clean up resources, close files, etc. We poll multiple times
-                // with increasing delays to give it a chance to exit.
-                //
-                // POLLING STRATEGY:
-                // - Check immediately, then after 100ms, 200ms, 500ms, 1000ms
-                // - Total max wait: ~1.8 seconds
-                // - This handles both fast exits and slower graceful shutdowns
-                let delays: [UInt32] = [0, 100_000, 200_000, 500_000, 1_000_000]
-                for (index, delay) in delays.enumerated() {
-                    if delay > 0 {
-                        usleep(delay)
-                    }
-                    let stillRunning = isProcessRunning(pid: pid)
-                    DebugLog.shared.log("Process check \(index + 1)/\(delays.count): stillRunning=\(stillRunning)")
-                    if !stillRunning {
-                        DebugLog.shared.log("Process terminated successfully after \(index + 1) check(s)")
-                        return true
-                    }
-                }
-
-                // Process still running after all retries - SIGTERM didn't work
-                DebugLog.shared.log("Process still running after all checks - SIGTERM may have been ignored", level: .warning)
-                return false
-            } catch {
-                DebugLog.shared.log("sudo kill failed with exception: \(error)", level: .error)
-                return false
+            // Try passwordless sudo first (if user has configured sudoers for kill)
+            if tryPasswordlessSudoKill(pid: pid, signal: signal) {
+                return true
             }
+
+            // Fall back to osascript with password prompt
+            DebugLog.shared.log("Passwordless sudo failed, falling back to osascript")
+            return tryOsascriptKill(pid: pid, signal: signal)
         }
 
         // For other errors (ESRCH = no such process, etc.), return false
@@ -270,5 +210,132 @@ final class RealProcessLauncher: ProcessLauncher {
         }
 
         return isRunning
+    }
+
+    // -------------------------------------------------------------------------
+    // PRIVATE HELPER: PASSWORDLESS SUDO KILL
+    // -------------------------------------------------------------------------
+    // Attempts to kill a root process using `sudo -n kill`.
+    // The -n flag means non-interactive (no password prompt).
+    //
+    // This only works if the user has configured a sudoers rule like:
+    //   username ALL=(ALL) NOPASSWD: /bin/kill
+    //
+    // Returns true if the process was killed, false if sudo failed or process
+    // is still running.
+    // -------------------------------------------------------------------------
+
+    private func tryPasswordlessSudoKill(pid: Int, signal: Int32) -> Bool {
+        DebugLog.shared.log("Trying passwordless sudo kill...")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        process.arguments = ["-n", "kill", "-\(signal)", "\(pid)"]
+
+        // Capture output to check for "password required" error
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+
+            if process.terminationStatus != 0 {
+                DebugLog.shared.log("sudo -n kill failed: status=\(process.terminationStatus), stderr=\(errorOutput.prefix(200))")
+                return false
+            }
+
+            DebugLog.shared.log("sudo -n kill succeeded, verifying process stopped...")
+
+            // Verify the process actually stopped
+            return waitForProcessToStop(pid: pid)
+
+        } catch {
+            DebugLog.shared.log("sudo -n kill threw exception: \(error)", level: .error)
+            return false
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // PRIVATE HELPER: OSASCRIPT KILL (WITH PASSWORD PROMPT)
+    // -------------------------------------------------------------------------
+    // Falls back to using osascript with administrator privileges when
+    // passwordless sudo is not configured. This prompts for password.
+    // -------------------------------------------------------------------------
+
+    private func tryOsascriptKill(pid: Int, signal: Int32) -> Bool {
+        DebugLog.shared.log("Using osascript for privileged kill...")
+
+        do {
+            // Build a kill command
+            let script = "kill -\(signal) \(pid)"
+
+            // Wrap it in AppleScript for admin privileges
+            // This will prompt the user for their password
+            let appleScript = "do shell script \"\(script)\" with administrator privileges"
+
+            // Run osascript to execute the AppleScript
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            process.arguments = ["-e", appleScript]
+
+            // Capture stderr to detect user cancellation
+            let errorPipe = Pipe()
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = errorPipe
+
+            try process.run()
+            process.waitUntilExit()
+
+            // Check for user cancellation (AppleScript error -128)
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+
+            if process.terminationStatus != 0 {
+                DebugLog.shared.log("osascript kill failed with status: \(process.terminationStatus), stderr: \(errorOutput)", level: .error)
+
+                if errorOutput.contains("-128") {
+                    DebugLog.shared.log("User cancelled password prompt for kill")
+                }
+                return false
+            }
+
+            DebugLog.shared.log("osascript kill completed, verifying process stopped...")
+            return waitForProcessToStop(pid: pid)
+
+        } catch {
+            DebugLog.shared.log("osascript kill threw exception: \(error)", level: .error)
+            return false
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // PRIVATE HELPER: WAIT FOR PROCESS TO STOP
+    // -------------------------------------------------------------------------
+    // Polls to verify a process has actually terminated after sending a signal.
+    // Uses increasing delays to handle both fast exits and slower shutdowns.
+    // -------------------------------------------------------------------------
+
+    private func waitForProcessToStop(pid: Int) -> Bool {
+        let delays: [UInt32] = [0, 100_000, 200_000, 500_000, 1_000_000]
+        for (index, delay) in delays.enumerated() {
+            if delay > 0 {
+                usleep(delay)
+            }
+            let stillRunning = isProcessRunning(pid: pid)
+            DebugLog.shared.log("Process check \(index + 1)/\(delays.count): stillRunning=\(stillRunning)")
+            if !stillRunning {
+                DebugLog.shared.log("Process terminated successfully after \(index + 1) check(s)")
+                return true
+            }
+        }
+
+        DebugLog.shared.log("Process still running after all checks", level: .warning)
+        return false
     }
 }
