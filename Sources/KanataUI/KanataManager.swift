@@ -111,7 +111,10 @@ final class KanataManager {
     // -------------------------------------------------------------------------
     static let kanataBinaryPath = "/opt/homebrew/bin/kanata"
     static let kanataConfigPath = "/Users/nikolai/dotfiles/kanata.kbd"
-    static let logFilePath = "/tmp/kanata-ui.log"
+    // Use ~/Library/Logs for the log file - this is the standard macOS location
+    // for application logs and is always writable by the current user.
+    // Using /tmp caused issues because sudo runs create root-owned files there.
+    static let logFilePath = NSHomeDirectory() + "/Library/Logs/kanata-ui.log"
 
     // -------------------------------------------------------------------------
     // PRIVATE STORED PROPERTIES - DEPENDENCIES

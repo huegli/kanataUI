@@ -216,18 +216,21 @@ final class RealSystemDialogs: SystemDialogs {
         logFile: String
     ) -> Int? {
         DebugLog.shared.log("Attempting passwordless sudo for process launch...")
+        DebugLog.shared.log("Executable: \(executablePath)")
+        DebugLog.shared.log("Arguments: \(arguments)")
 
-        // Clear/create the log file first
+        // Remove existing log file (it might be owned by root from previous runs)
+        // Then create a fresh one that we can write to
+        try? FileManager.default.removeItem(atPath: logFile)
         FileManager.default.createFile(atPath: logFile, contents: nil)
 
         guard let logFileHandle = FileHandle(forWritingAtPath: logFile) else {
+            // If we still can't write, the passwordless sudo approach won't work
+            // because we need somewhere to redirect kanata's output
             DebugLog.shared.log("Failed to open log file for writing: \(logFile)", level: .warning)
+            DebugLog.shared.log("This may be because the file is owned by root. Try: sudo rm \(logFile)", level: .warning)
             return nil
         }
-
-        // We'll capture stderr from sudo to detect "password required" errors
-        // while letting the actual process output go to the log file
-        let sudoErrorPipe = Pipe()
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
@@ -238,54 +241,75 @@ final class RealSystemDialogs: SystemDialogs {
         sudoArgs.append(contentsOf: arguments)
         process.arguments = sudoArgs
 
-        // Redirect process stdout to the log file, but capture sudo's stderr
-        // to detect password requirement errors
-        process.standardOutput = logFileHandle
-        process.standardError = sudoErrorPipe
+        DebugLog.shared.log("Full sudo command: sudo \(sudoArgs.joined(separator: " "))")
 
-        // Just try to launch directly - no preliminary tests needed
-        // The sudoers rule is specific to the executable, so we need to try
-        // running that exact executable to know if it's allowed
+        // Redirect both stdout and stderr to the log file
+        // This ensures kanata's output (including errors) goes to the log
+        process.standardOutput = logFileHandle
+        process.standardError = logFileHandle
+
         do {
             try process.run()
+            let sudoPID = process.processIdentifier
+            DebugLog.shared.log("Started sudo process with PID: \(sudoPID)")
 
-            // Give it a brief moment to either start or fail with password error
-            Thread.sleep(forTimeInterval: 0.2)
+            // Give it a moment to start
+            Thread.sleep(forTimeInterval: 0.5)
 
-            // Check if sudo complained about needing a password
-            // We read available data without blocking
-            let errorData = sudoErrorPipe.fileHandleForReading.availableData
-            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+            // Check if the sudo process is still running
+            DebugLog.shared.log("Checking if sudo process is still running...")
+            let sudoStillRunning = process.isRunning
+            DebugLog.shared.log("Sudo process isRunning: \(sudoStillRunning)")
 
-            if errorOutput.contains("password") || errorOutput.contains("Password") {
-                DebugLog.shared.log("Passwordless sudo requires password, falling back: \(errorOutput)")
-                // Kill the sudo process since it's waiting for password
-                process.terminate()
-                return nil
+            if !sudoStillRunning {
+                // Process exited quickly - likely password error or other failure
+                let status = process.terminationStatus
+                DebugLog.shared.log("Sudo process exited with status: \(status)", level: .warning)
+
+                // Read log file to see what happened
+                if let logContents = try? String(contentsOfFile: logFile, encoding: .utf8) {
+                    DebugLog.shared.log("Log file contents: \(logContents)", level: .warning)
+                    if logContents.contains("password") {
+                        DebugLog.shared.log("Password was required")
+                        return nil
+                    }
+                }
+
+                // Non-zero exit without password message means some other error
+                if status != 0 {
+                    return nil
+                }
             }
 
-            // Wait a bit more for kanata to fully start
-            Thread.sleep(forTimeInterval: 0.3)
-
             // Find the kanata process using pgrep
+            // Use -x for exact match on process name (not full path)
             let pgrepProcess = Process()
             pgrepProcess.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-            pgrepProcess.arguments = ["-f", executablePath]
+            pgrepProcess.arguments = ["kanata"]  // Match process name, not full path
 
             let outputPipe = Pipe()
+            let errorPipe = Pipe()
             pgrepProcess.standardOutput = outputPipe
-            pgrepProcess.standardError = FileHandle.nullDevice
+            pgrepProcess.standardError = errorPipe
 
             try pgrepProcess.run()
             pgrepProcess.waitUntilExit()
 
             let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
             let outputString = String(data: outputData, encoding: .utf8) ?? ""
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorString = String(data: errorData, encoding: .utf8) ?? ""
+
+            DebugLog.shared.log("pgrep exit code: \(pgrepProcess.terminationStatus)")
+            DebugLog.shared.log("pgrep stdout: '\(outputString)'")
+            DebugLog.shared.log("pgrep stderr: '\(errorString)'")
 
             // pgrep returns one PID per line, get the first one
             let pids = outputString.trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: .newlines)
                 .compactMap { Int($0) }
+
+            DebugLog.shared.log("Found PIDs: \(pids)")
 
             if let pid = pids.first {
                 DebugLog.shared.log("Passwordless sudo succeeded! Kanata PID: \(pid)")
