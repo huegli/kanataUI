@@ -230,7 +230,8 @@ final class RealProcessLauncher: ProcessLauncher {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        process.arguments = ["-n", "kill", "-\(signal)", "\(pid)"]
+        // Use full path /bin/kill to match sudoers rule exactly
+        process.arguments = ["-n", "/bin/kill", "-\(signal)", "\(pid)"]
 
         // Capture output to check for "password required" error
         let outputPipe = Pipe()
