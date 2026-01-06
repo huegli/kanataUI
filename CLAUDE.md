@@ -3,6 +3,43 @@
 ## High Level Design Spec
 The purpose of this application is to act as a UI interface to the kanata command line application. The kanata CLI is launched as a background process with the specified configuration file, running with sudo privileges.
 
+## Initial Setup (One-Time)
+
+For the best experience (no password prompts), complete these one-time setup steps:
+
+### 1. Input Monitoring Permission
+KanataUI needs Input Monitoring permission to allow kanata to access keyboard input.
+
+1. Open **System Settings → Privacy & Security → Input Monitoring**
+2. Click the **+** button and add **KanataUI.app**
+3. Enable the checkbox next to KanataUI
+
+### 2. Passwordless Sudo (Optional but Recommended)
+To avoid password prompts on every launch/relaunch:
+
+```bash
+sudo visudo -f /etc/sudoers.d/kanata
+```
+
+Add this line (replace `username` with your macOS username):
+```
+username ALL=(ALL) NOPASSWD: /opt/homebrew/bin/kanata
+```
+
+Save and exit (`:wq` in vi).
+
+### 3. Verify Setup
+```bash
+# Test passwordless sudo works
+sudo -n /opt/homebrew/bin/kanata --help
+
+# Should show help text without asking for password
+```
+
+### Why These Permissions?
+- **Input Monitoring**: Required for kanata to intercept and remap keyboard events
+- **Passwordless sudo**: kanata needs root privileges to access raw keyboard input; the sudoers rule allows this without interactive password prompts
+
 ## UI Interface
 Kanata-UI shall be a macOS menu bar application.
 
@@ -26,7 +63,9 @@ Standard macOS menu bar convention:
 ### Initial State
 - The app automatically starts kanata on launch after validating the configuration file
 - Config validation uses `kanata --check --cfg <config>` (does not require sudo)
-- If validation passes, the app prompts for password and launches kanata
+- If validation passes:
+  - With passwordless sudo configured: kanata starts silently
+  - Without passwordless sudo: prompts for password, then launches kanata
 - If validation fails, the user can choose to:
   - **Quit**: Exit the application
   - **Edit Config**: Open the config file in TextEdit for editing
@@ -44,6 +83,7 @@ sudo /opt/homebrew/bin/kanata --cfg /Users/nikolai/dotfiles/kanata.kbd
 
 ### Configuration
 - Config path is hardcoded to `/Users/nikolai/dotfiles/kanata.kbd`
+- Log file: `~/Library/Logs/kanata-ui.log` (kanata's stdout/stderr output)
 
 ### Config Validation
 - Before launching kanata, validate the config file using `kanata --check --cfg <config>`
@@ -155,12 +195,19 @@ KanataManager Tests:
 ### Manual Testing Checklist
 Integration scenarios requiring real system interaction:
 
+**With passwordless sudo configured:**
+- [ ] App launches → validates config → kanata starts silently (no password prompt) → filled icon
+- [ ] Relaunch → stops current process → validates config → restarts silently
+
+**Without passwordless sudo (fallback):**
 - [ ] App launches → validates config → prompts for password → kanata starts → filled icon
+- [ ] Relaunch → stops current process → validates config → prompts for password → restarts
+- [ ] Cancel password prompt on launch → app quits silently
+
+**General:**
 - [ ] Click menu bar icon → shows context menu with status, Edit Config, Relaunch, Settings, Quit
 - [ ] Edit Config → TextEdit opens with config file
-- [ ] Relaunch → stops current process → validates config → prompts for password → restarts
 - [ ] Relaunch with invalid config → shows error dialog with Edit/Recheck/Quit options
-- [ ] Cancel password prompt on launch → app quits silently
 - [ ] Kill kanata process externally → alert shown → app quits
 - [ ] Start with missing kanata binary → alert → app quits
 - [ ] Start with missing config file → alert → app quits
@@ -168,6 +215,7 @@ Integration scenarios requiring real system interaction:
 - [ ] Invalid config → click Edit Config → TextEdit opens → alert shown again
 - [ ] Invalid config → fix config externally → click Recheck → validation passes → continues
 - [ ] Quit app while kanata running → kanata process terminated
+- [ ] Missing Input Monitoring permission → IOHIDDeviceOpen error detected → alert with instructions → app quits
 
 ## Future Improvements
 
