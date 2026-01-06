@@ -70,6 +70,7 @@ Most error conditions are fatal (show alert and quit). Config validation errors 
 | Kanata binary missing | Alert, then quit |
 | Config file missing | Alert, then quit |
 | Config validation fails | Alert with Recheck/Edit/Quit options |
+| Input Monitoring permission missing | Alert with instructions, then quit |
 | Kanata process crashes | Alert, then quit |
 | Launch failure | Alert, then quit |
 | User cancels sudo prompt | Quit silently (no alert) |

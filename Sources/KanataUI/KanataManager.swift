@@ -395,6 +395,10 @@ final class KanataManager {
             appState.isRunning = true
             DebugLog.shared.log("Kanata started successfully with PID \(pid)")
 
+            // Check for Input Monitoring permission error after a brief delay
+            // Kanata may start but fail when it tries to access the keyboard
+            checkForInputMonitoringError(pid: pid)
+
             // Start monitoring the process for crashes
             startMonitoring()
 
@@ -631,6 +635,55 @@ final class KanataManager {
     // -------------------------------------------------------------------------
     // HELPER METHODS
     // -------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
+    // checkForInputMonitoringError() - DETECT PERMISSION ISSUES
+    // -------------------------------------------------------------------------
+    // Kanata requires Input Monitoring permission to intercept keyboard events.
+    // If this permission is not granted, kanata will output an error like:
+    //   "IOHIDDeviceOpen error: (iokit/common) not permitted Apple Internal Keyboard / Trackpad"
+    //
+    // This error may not cause an immediate crash - kanata might continue running
+    // but fail to remap any keys. We check the log file shortly after launch to
+    // detect this condition and inform the user how to fix it.
+    //
+    // WHY A DELAY?
+    // The log file is written asynchronously. We need to wait a moment for
+    // kanata to attempt to open the keyboard device and log any errors.
+    // -------------------------------------------------------------------------
+
+    /// Checks the log file for Input Monitoring permission errors.
+    /// If found, shows an alert and quits the application.
+    /// - Parameter pid: The PID of the kanata process (for logging)
+    private func checkForInputMonitoringError(pid: Int) {
+        // Use a short delay to allow kanata to write to the log file
+        // DispatchQueue.main.asyncAfter schedules work on the main thread after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+
+            let logContents = self.readLogFile()
+            DebugLog.shared.log("Checking log for Input Monitoring errors...")
+
+            // Check for the specific IOHIDDeviceOpen permission error
+            if logContents.contains("IOHIDDeviceOpen error") && logContents.contains("not permitted") {
+                DebugLog.shared.log("Input Monitoring permission error detected!", level: .error)
+
+                // Stop monitoring and clean up before showing the alert
+                self.stopMonitoring()
+
+                // Terminate the kanata process since it can't function without this permission
+                _ = self.processLauncher.terminate(pid: pid, signal: SIGKILL)
+                self.appState.kanataPID = nil
+                self.appState.isRunning = false
+
+                // Show informative error and quit
+                self.systemDialogs.showFatalAlert(
+                    title: "Input Monitoring Permission Required",
+                    message: "Kanata needs Input Monitoring permission to remap keyboard keys.\n\nTo fix this:\n1. Open System Settings → Privacy & Security → Input Monitoring\n2. Add kanata (or Terminal if running from there) to the allowed list\n3. Restart KanataUI"
+                )
+            }
+        }
+    }
 
     /// Reads the kanata log file for error reporting.
     /// Returns the contents or an error message if reading fails.
